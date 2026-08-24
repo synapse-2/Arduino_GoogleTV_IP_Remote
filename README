@@ -1,0 +1,7 @@
+
+
+To compile 
+1. Make sure the idf_component.yml file is present in the /src folder and has the espressif/mdns lib as a dependency
+2. Must run Makemenu command to get the ESP managed components (espressif/mdns) downloaded
+2. Update the platfom.ini to include the right path on your local folder for "-I D:/Documents/Arduino_GoogleTV_IP_Remote/managed_components/espressif__mdns/include/"
+3. 
