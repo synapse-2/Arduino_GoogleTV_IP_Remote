@@ -1,1 +1,7 @@
 // TestMessageWithOptions.str max_size:16
+
+# message.options
+Pairing.PairingRequest.client_name          type:FT_POINTER
+Pairing.PairingRequest.service_name         type:FT_POINTER
+
+Pairing.PairingRequestAck.server_name       type:FT_POINTER

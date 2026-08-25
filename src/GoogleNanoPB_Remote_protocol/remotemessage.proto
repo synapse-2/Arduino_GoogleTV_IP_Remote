@@ -2,7 +2,7 @@
 // Comments on RemoteKeyCode enum added from https://android.googlesource.com/platform/frameworks/native/+/master/include/android/keycodes.h
 
 syntax = "proto3";
-package remote;
+package Remote;
 
 message RemoteAppLinkLaunchRequest {
   string app_link = 1;

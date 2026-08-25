@@ -1,7 +1,100 @@
 
 
-To compile 
-1. Make sure the idf_component.yml file is present in the /src folder and has the espressif/mdns lib as a dependency
-2. Must run Makemenu command to get the ESP managed components (espressif/mdns) downloaded
-2. Update the platfom.ini to include the right path on your local folder for "-I D:/Documents/Arduino_GoogleTV_IP_Remote/managed_components/espressif__mdns/include/"
-3. 
+# Arduino Google TV IP Remote
+
+An ESP32-S3 project for discovering Google TV and Android TV devices on the
+local network and, eventually, controlling them through the Google TV Remote
+Control v2 protocol.
+
+The project is inspired by:
+
+- [ESP32 Android TV Remote v2](https://github.com/nguyluky/ESP32_android_tv_remote_v2)
+- [Google TV (aka Android TV) Remote Control (v2) wiki](https://github.com/Aymkdn/assistant-freebox-cloud/wiki/Google-TV-(aka-Android-TV)-Remote-Control-(v2))
+
+The protocol uses Protocol Buffers. This project uses
+[nanopb](https://github.com/nanopb/nanopb) to serialize and deserialize the
+Google pairing and remote protocol messages on the ESP32. The protocol schema
+files are in `src/GoogleNanoPB_Remote_protocol/`.
+
+## Current functionality
+
+- Connects the ESP32 to Wi-Fi through WiFiManager.
+- Discovers `_androidtvremote2._tcp` services with mDNS.
+- Reads additional device information from `_googlecast._tcp` TXT records.
+- Resolves the discovered device IP address to a network MAC address when
+  possible.
+- Generates nanopb sources from the configured protocol schema during the
+	pioarduino build.
+
+Pairing, encrypted communication, and key input transmission are represented
+by the protocol definitions but are still being integrated into the remote
+class.
+
+## Hardware and software
+
+- ESP32-S3 with 16 MB flash and 8 MB PSRAM
+- VS Code with pioarduino
+- A Google TV or Android TV on the same Wi-Fi network
+- ESP-IDF managed component support
+
+## Compile directions
+
+1. Make sure `src/idf_component.yml` is present and contains the
+	`espressif/mdns` dependency.
+
+  ```text
+  dependencies:
+  idf: ">=5.0"
+  espressif/mdns: ">1.8.2"
+  
+  
+```
+2. Run the pioarduino menuconfig target to download and configure the ESP-IDF
+	managed components:
+
+	```text
+	pio run -t menuconfig
+	```
+
+3. Update the mDNS include path in `platformio.ini` to match the project
+	location on your computer. For example:
+
+	```ini
+	-I D:/Documents/Arduino_GoogleTV_IP_Remote/managed_components/espressif__mdns/include/
+	```
+
+4. Build the project:
+
+	```text
+	pio run
+	```
+
+5. Upload it to the board and open the serial monitor at 115200 baud:
+
+	```text
+	pio run -t upload
+	pio device monitor -b 115200
+	```
+
+The default environment is `esp32s3-n16r8-USBOTG`. Nanopb is declared in
+`platformio.ini` as `nanopb/Nanopb`, currently pinned to the `0.4.x` release
+line. The build configuration generates sources under pioarduino's build
+directory from the `.proto` files selected by `custom_nanopb_protos`.
+
+## Project layout
+
+```text
+src/
+  GoogleIP_Remote.cpp       mDNS discovery and network helpers
+  GoogleIP_Remote.h         Google TV remote interface and device model
+  main.cpp                  ESP32 application entry point
+  GoogleNanoPB_Remote_protocol/
+	 *.proto                 Google TV pairing and remote protocol schemas
+```
+
+## License and attribution
+
+This project is an independent implementation inspired by the two projects
+linked above. Please review their repositories and the upstream Google
+protocol definitions for their respective licenses and attribution
+requirements.
