@@ -40,12 +40,13 @@ class.
 ## Compile directions
 
 1. Make sure `src/idf_component.yml` is present and contains the
-	`espressif/mdns` dependency.
+	`espressif/mdns` and `Wolfssl` dependency.
 
   ```text
   dependencies:
   idf: ">=5.0"
-  espressif/mdns: ">1.8.2"
+  espressif/mdns:   ">1.8.2"
+  wolfssl/wolfssl:  ">5.8.2"
   
   
 ```
@@ -56,20 +57,33 @@ class.
 	pio run -t menuconfig
 	```
 
-3. Update the mDNS include path in `platformio.ini` to match the project
+3. Update the `mDNS` and `Wolfssl` and include path in `platformio.ini` to match the project
 	location on your computer. For example:
 
 	```ini
-	-I D:/Documents/Arduino_GoogleTV_IP_Remote/managed_components/espressif__mdns/include/
+	lib_ldf_mode = off
+	lib_compat_mode = strict
+	build_flags = 
+		-D WM_NOHELP						;do not show wifi manager help on the info page
+		-D WOLFSSL_USER_SETTINGS			; use the user settigns file in the lib
+		-D WOLFSSL_ESP32
+		-I D:/Documents/Arduino_GoogleTV_IP_Remote/include 
+		-I D:/Documents/Arduino_GoogleTV_IP_Remote/managed_components/espressif__mdns/include/
+		-I D:/Documents/Arduino_GoogleTV_IP_Remote/managed_components/wolfssl__wolfssl/include/
+
+	build_src_filter =
+  		-<../managed_components/wolfssl__wolfssl/include/user_settings.h>
 	```
 
-4. Build the project:
+4. Rename the file in D:/Documents/Arduino_GoogleTV_IP_Remote/managed_component/wolfssl__wolfssl/include/user_settings.h to user_setting.h
+
+5. Build the project:
 
 	```text
 	pio run
 	```
 
-5. Upload it to the board and open the serial monitor at 115200 baud:
+6. Upload it to the board and open the serial monitor at 115200 baud:
 
 	```text
 	pio run -t upload

@@ -6,7 +6,7 @@
 
 uint8_t *PairingMessageHelper::encodePairingMessage(Pairing_PairingMessage &message)
 {
-    // get the size of the meggase
+    // 1. get the size of the meggase
     size_t msg_required_buffer_size;
     bool was_size_found = pb_get_encoded_size(&msg_required_buffer_size, Pairing_PairingMessage_fields, &message);
 
@@ -15,15 +15,16 @@ uint8_t *PairingMessageHelper::encodePairingMessage(Pairing_PairingMessage &mess
         return NULL;
     }
 
-    // 4. Dynamically allocate or claim a block matching that exact size
+    // 2. Dynamically allocate or claim a block matching that exact size
     uint8_t *dynamic_buffer = (uint8_t *)malloc(msg_required_buffer_size);
     if (!dynamic_buffer)
         return NULL;
 
-    // 5. Create a real stream and serialize into your perfectly-sized buffer
+    // 3. Create a real stream and serialize into your perfectly-sized buffer
     pb_ostream_t real_stream = pb_ostream_from_buffer(dynamic_buffer, msg_required_buffer_size);
     if (pb_encode(&real_stream, Pairing_PairingMessage_fields, &message))
     {
+        // remember to clear the buffer when no longer needed
         return dynamic_buffer;
     }
     return NULL;

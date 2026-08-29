@@ -1,9 +1,39 @@
+/* wolfSSL */
+/* Always include wolfcrypt/settings.h before any other wolfSSL file.    */
+/* Reminder: settings.h pulls in user_settings.h; don't include it here. */
+/* undefine Arduino as that gives an error in WOLFSSL */
+
+#include <wolfssl/wolfcrypt/settings.h>
+#ifdef WOLFSSL_ESPIDF
+#include <esp_log.h>
+#include <rtc_wdt.h>
+#include <wolfssl/wolfcrypt/port/Espressif/esp32-crypt.h>
+#endif
+
+#include <wolfssl/version.h>
+#include <wolfssl/wolfcrypt/types.h>
+// wolfSSL - wolfCrypt options and headers
+#include <wolfssl/ssl.h>
+#include <wolfssl/wolfcrypt/asn.h>
+#include <wolfssl/wolfcrypt/rsa.h>
+#include <wolfssl/wolfcrypt/random.h>
+#include <wolfssl/wolfcrypt/coding.h>
+
 #include "GoogleIP_Remote.h"
 #include <ESPmDNS.h>
 #include <WiFi.h>
 #include <lwip/etharp.h>
 #include <lwip/ip_addr.h>
 #include <UtilityFunctions.h>
+#include "FFat.h"
+#include "FS.h"
+#include "FF.h"
+#include "esp_task_wdt.h" // Required to manually feed the watchdog
+
+#if defined(CONFIG_NIMBLE_USE_MAGIC_ENUM)
+#include "magic_enum/magic_enum.hpp"
+#include "magic_enum/magic_enum_iostream.hpp"
+#endif
 
 namespace GoogleIPRemote
 {
@@ -15,7 +45,7 @@ namespace GoogleIPRemote
         {
             UtilityFunctions::debugLog("[Discovery] Browsing for _androidtvremote2._tcp services ...");
             // Query mDNS for the specific Android/Google TV remote service service type
-            int numServices = MDNS.queryService(ANDRIOD_TV_RMOETE_SERVICE, "tcp");
+            int numServices = MDNS.queryService(GIPR_ANDRIOD_TV_RMOETE_SERVICE, "tcp");
 
             if (numServices == 0)
             {
@@ -38,9 +68,9 @@ namespace GoogleIPRemote
                     tv.ip = MDNS.address(i).toString();
 
                     // 3. Resolve MAC Address
-                    if (MDNS.hasTxt(i, ANDROID_BT_NAME))
+                    if (MDNS.hasTxt(i, GIPR_ANDROID_BT_NAME))
                     {
-                        tv.btMac = MDNS.txt(i, ANDROID_BT_NAME);
+                        tv.btMac = MDNS.txt(i, GIPR_ANDROID_BT_NAME);
                     }
                     else
                     {
@@ -69,7 +99,7 @@ namespace GoogleIPRemote
 
             UtilityFunctions::debugLog("[Discovery] Browsing for _googlecast._tcp services ...");
 
-            numServices = MDNS.queryService(GOOGLE_CROMECAST_SERVICE, "tcp");
+            numServices = MDNS.queryService(GIPR_GOOGLE_CROMECAST_SERVICE, "tcp");
             if (numServices == 0)
             {
                 UtilityFunctions::debugLog("[Discovery] No crome cast TVs found on the local network.");
@@ -88,14 +118,14 @@ namespace GoogleIPRemote
                     {
                         if (existingDev.ip == cromeIP)
                         {
-                            if (MDNS.hasTxt(i, GOOGLE_FRENDLY_NAME))
+                            if (MDNS.hasTxt(i, GIPR_GOOGLE_FRENDLY_NAME))
                             {
-                                existingDev.friendlyName = MDNS.txt(i, GOOGLE_FRENDLY_NAME);
+                                existingDev.friendlyName = MDNS.txt(i, GIPR_GOOGLE_FRENDLY_NAME);
                             }
 
-                            if (MDNS.hasTxt(i, GOOGLE_MODEL_NAME))
+                            if (MDNS.hasTxt(i, GIPR_GOOGLE_MODEL_NAME))
                             {
-                                existingDev.model = MDNS.txt(i, GOOGLE_MODEL_NAME);
+                                existingDev.model = MDNS.txt(i, GIPR_GOOGLE_MODEL_NAME);
                             }
                             break;
                         }
@@ -158,12 +188,453 @@ namespace GoogleIPRemote
             WiFiUDP dummyClient;
 
             // Begin an arbitrary packet frame targeting a port
-            dummyClient.beginPacket(targetIP, GOOGLEIP_TVPORT_SEND);
+            dummyClient.beginPacket(targetIP, GIPR_GOOGLEIP_TVPORT_SEND);
             dummyClient.write(0);    // Send 1 byte of junk data
             dummyClient.endPacket(); // Fire!
 
             // Give the network adapter a few milliseconds to process the physical hardware response
             delay(10);
         }
+    }
+
+    GoogleTvRemote::GoogleTvRemote()
+    {
+    }
+
+    bool GoogleTvRemote::createSSLCtx()
+    {
+        int err = wolfSSL_Init();
+        if (err != WOLFSSL_SUCCESS)
+        {
+            // Initialization failed
+            UtilityFunctions::debugLogf("Error in crypto lib init %i:%s \n", err, GoogleIPRemote::GoogleTvRemote::getWolfsslTxtError(err));
+            return false;
+        }
+    }
+
+    String GoogleTvRemote::getWolfsslTxtError(int error)
+    {
+        char error_text_buffer[GIPR_WOLFSSL_ERROR_TXT_BUFF];
+
+        // Convert the negative integer (e.g. -132) into descriptive text
+        wolfSSL_ERR_error_string_n(error, error_text_buffer, sizeof(error_text_buffer));
+        return String(error_text_buffer);
+    }
+
+    uint8_t *GoogleTvRemote::getSelfCertificate()
+    {
+        if (!FFat.begin(true))
+        {
+            UtilityFunctions::debugLog("GoogleTvRemote: An Error has occurred while mounting FFat");
+            return NULL;
+        }
+
+        UtilityFunctions::debugLog("GoogleTvRemote: Mounted FFat OK");
+
+        // check if we have a cert and provate key on the disk
+        File file = FFat.open(GIPR_CERT_FILE_NAME, "r");
+        if (file)
+        {
+            // Extract the file footprint size
+            size_t file_size = file.size();
+            if (file_size == 0)
+            {
+                UtilityFunctions::debugLog(STRINGIFY(GIPR_CERT_FILE_NAME + ":file is empty"));
+                file.close();
+                return NULL;
+            }
+
+            // Dynamically allocate a clean memory block
+            uint8_t *buffer = (uint8_t *)malloc(file_size);
+            if (buffer == nullptr)
+            {
+                UtilityFunctions::debugLogf("malloc allocation failed for bytes:%i \n", file_size);
+                file.close();
+                return NULL;
+            }
+
+            // Ingest the file data array in a single block pass
+            size_t bytes_read = file.read(buffer, file_size);
+            file.close();
+
+            UtilityFunctions::debugLogf("Read %i bytes successfully from FFat \n", bytes_read);
+            return buffer;
+        }
+        else
+        {
+            // CERT does not exist so create a new one nd save
+            return NULL;
+        }
+    }
+    // make the certs, sign and save on to the FFat partition
+    bool GoogleTvRemote::makeNewSelfCertificate()
+    {
+        // Output scratch buffers (PEM formatting requires extra room for Base64 wrapping)
+        // Allocate heavy scratch buffers dynamically onto the heap to protect the stack
+        uint8_t *der_buffer = (uint8_t *)malloc(GIPR_DER_BUFFER);
+        char *pem_output_buffer = (char *)malloc(GIPR_PEM_BUFFER);
+        char error_text_buffer[80];
+
+        WC_RNG *rng = new (WC_RNG);
+        RsaKey *key = new (RsaKey);
+        RsaNb *nb = new (RsaNb);
+
+        Cert *myCert = new (Cert);
+        int der_len = 0;
+        int pem_len = 0;
+
+        if (!FFat.begin(true))
+        {
+            UtilityFunctions::debugLog("Webserver: An Error has occurred while mounting FFat");
+            return false;
+        }
+
+        // Initialize random number generator and RSA key structure
+        int err = wc_InitRng(rng);
+        if (err != 0)
+        {
+
+            // Convert the negative integer (e.g. -132) into descriptive text
+            wolfSSL_ERR_error_string_n(err, error_text_buffer, sizeof(error_text_buffer));
+            UtilityFunctions::debugLogf("RNG Init Failed %i:%s \n", err, error_text_buffer);
+            // Free memory objects
+            free(der_buffer);
+            free(pem_output_buffer);
+            delete (rng);
+            delete (key);
+            delete (nb);
+            delete (myCert);
+            return false;
+        }
+
+        err = wc_InitRsaKey(key, NULL);
+        if (err != 0)
+        {
+            wolfSSL_ERR_error_string_n(err, error_text_buffer, sizeof(error_text_buffer));
+            UtilityFunctions::debugLogf("RSA Key Init Failed %i:%s \n", err, error_text_buffer);
+
+            // Free memory objects
+            wc_FreeRng(rng);
+            free(der_buffer);
+            free(pem_output_buffer);
+            delete (rng);
+            delete (key);
+            delete (nb);
+            delete (myCert);
+            return false;
+        }
+
+        err = wc_RsaSetNonBlock(key, nb);
+        if (err != 0)
+        {
+
+            wolfSSL_ERR_error_string_n(err, error_text_buffer, sizeof(error_text_buffer));
+            UtilityFunctions::debugLogf("Key Non Bock feature set failed! %i:%s \n", err, error_text_buffer);
+
+            // Free  memory objects
+            wc_FreeRsaKey(key);
+            wc_FreeRng(rng);
+            free(der_buffer);
+            free(pem_output_buffer);
+            delete (rng);
+            delete (key);
+            delete (nb);
+            delete (myCert);
+            return false;
+        }
+
+        err = wc_RsaSetNonBlockTime(key, GIPR_RSA_NONBLOCK_TIME, ESP.getCpuFreqMHz()); // Block Max = 1000 micro seconds = 1 mili sec
+        if (err != 0)
+        {
+
+            wolfSSL_ERR_error_string_n(err, error_text_buffer, sizeof(error_text_buffer));
+            UtilityFunctions::debugLogf("Key Non Block time set failed! %i:%s \n", err, error_text_buffer);
+
+            // Free  memory objects
+            wc_FreeRsaKey(key);
+            wc_FreeRng(rng);
+            free(der_buffer);
+            free(pem_output_buffer);
+            delete (rng);
+            delete (key);
+            delete (nb);
+            delete (myCert);
+            return false;
+        }
+
+        UtilityFunctions::debugLog("Generating 2048-bit RSA Key pair...");
+        int blockCount = 0;
+
+        // disbale watchdog on idle task
+        // UtilityFunctions::disableTWDTimeronIdleTaskOnCore(xPortGetCoreID());
+        do
+        {
+            err = wc_MakeRsaKey(key, GIPR_RSA_KEY_LENGTH, (long)65537, rng);
+            blockCount++;
+
+        } while (err == FP_WOULDBLOCK);
+
+        // enable watchdog on idle task
+        // UtilityFunctions::enableTWDTimeronIdleTaskOnCore(xPortGetCoreID());
+        if (err < 0)
+        {
+
+            wolfSSL_ERR_error_string_n(err, error_text_buffer, sizeof(error_text_buffer));
+            UtilityFunctions::debugLogf("Key generation failed! %i:%s \n", err, error_text_buffer);
+
+            // Free  memory objects
+            wc_FreeRsaKey(key);
+            wc_FreeRng(rng);
+            free(der_buffer);
+            free(pem_output_buffer);
+            delete (rng);
+            delete (key);
+            delete (nb);
+            delete (myCert);
+            return NULL;
+        }
+
+        UtilityFunctions::debugLogf("Key generation succeded in %i blocks!  \n", blockCount);
+        // Convert Private Key to DER bytes format
+        der_len = wc_RsaKeyToDer(key, der_buffer, GIPR_DER_BUFFER);
+        if (der_len < 0)
+        {
+            wolfSSL_ERR_error_string_n(der_len, error_text_buffer, sizeof(error_text_buffer));
+            UtilityFunctions::debugLogf("Key der buffer len failed, error: %d: %s \n", der_len, error_text_buffer);
+
+            // Free memory objects
+            wc_FreeRsaKey(key);
+            wc_FreeRng(rng);
+            free(der_buffer);
+            free(pem_output_buffer);
+            delete (rng);
+            delete (key);
+            delete (nb);
+            delete (myCert);
+            return false;
+        }
+        UtilityFunctions::debugLogf("Key der buffer len %i \n", der_len);
+        // ESP_LOG_BUFFER_HEX_LEVEL("RSA KEY", der_buffer, der_len, ESP_LOG_ERROR);
+
+        // Initialize and populate your istinguished Name details
+        wc_InitCert(myCert);
+        strncpy(myCert->subject.commonName, UtilityFunctions::loadLocalHostname().c_str(), CTC_NAME_SIZE);
+        strncpy(myCert->subject.country, GIPR_CERT_COUNTRY, CTC_NAME_SIZE);
+        strncpy(myCert->subject.state, GIPR_CERT_STATE, CTC_NAME_SIZE);
+        strncpy(myCert->subject.locality, GIPR_CERT_CITY, CTC_NAME_SIZE);
+        strncpy(myCert->subject.org, GIPR_CERT_ORG, CTC_NAME_SIZE);
+        strncpy(myCert->subject.unit, GIPR_CERT_UNIT, CTC_NAME_SIZE);
+        strncpy(myCert->subject.email, GIPR_CERT_EMAIL, CTC_NAME_SIZE);
+
+        // Set 10-year validity (~3650 days)
+        myCert->daysValid = 3650;
+        myCert->isCA = 0;
+        myCert->sigType = CTC_SHA256wRSA;
+
+        UtilityFunctions::debugLog("Signing X.509 Certificate...");
+        // Generate self-signed certificate bytes (DER format)
+        blockCount = 0;
+        err = 0;
+        do
+        {
+            err = wc_MakeSelfCert(myCert, der_buffer, GIPR_DER_BUFFER, key, rng);
+
+            blockCount++;
+            if (err == FP_WOULDBLOCK || err == WC_PENDING_E)
+            {
+                UtilityFunctions::delay(GIPR_DELAY_TO_YEILD_MiliSec);
+            }
+            if ((blockCount & 15) == 0)
+            {
+                UtilityFunctions::debugLogf("Cert signing .... current block:%i \n", blockCount);
+            }
+        } while ((err == FP_WOULDBLOCK) || (err == WC_PENDING_E));
+
+        if (err < 0)
+        {
+            wolfSSL_ERR_error_string_n(der_len, error_text_buffer, sizeof(error_text_buffer));
+            UtilityFunctions::debugLogf("Cert signing failed, error: %d: %s \n", der_len, error_text_buffer);
+
+            // Free memory objects
+            wc_FreeRsaKey(key);
+            wc_FreeRng(rng);
+            free(der_buffer);
+            free(pem_output_buffer);
+            delete (rng);
+            delete (key);
+            delete (nb);
+            delete (myCert);
+            return false;
+        }
+
+        int cert_len = err;
+        UtilityFunctions::debugLogf("Cert signing succeded in %i blocks!  \n", blockCount);
+
+        // Convert and Print Certificate to PEM layout
+        // (Replaces openssl_x509_export)
+        memset(pem_output_buffer, 0, 4096);
+        pem_len = wc_DerToPem(der_buffer, cert_len, (uint8_t *)pem_output_buffer, GIPR_PEM_BUFFER, CERT_TYPE);
+        if (pem_len > 0)
+        {
+            UtilityFunctions::debugLog("--- START GENERATED CLIENT.PEM ---");
+            UtilityFunctions::debugLog(pem_output_buffer);
+            ffat_write_buffer(GIPR_CERT_FILE_NAME, pem_output_buffer, pem_len, "", "");
+        }
+        else
+        {
+
+            wolfSSL_ERR_error_string_n(pem_len, error_text_buffer, sizeof(error_text_buffer));
+            UtilityFunctions::debugLogf("Cert PEM generation failed, error: %d: %s \n", pem_len, error_text_buffer);
+
+            // Free memory objects
+            wc_FreeRsaKey(key);
+            wc_FreeRng(rng);
+            free(der_buffer);
+            free(pem_output_buffer);
+            delete (rng);
+            delete (key);
+            delete (nb);
+            delete (myCert);
+            return false;
+        }
+
+        // Convert Private Key to DER bytes format
+        der_len = wc_RsaKeyToDer(key, der_buffer, GIPR_DER_BUFFER);
+
+        // Convert and Print Private Key to PEM layout
+        // (Replaces openssl_pkey_export)
+        memset(pem_output_buffer, 0, sizeof(pem_output_buffer));
+        pem_len = wc_DerToPem(der_buffer, der_len, (uint8_t *)pem_output_buffer, GIPR_PEM_BUFFER, PRIVATEKEY_TYPE);
+        if (pem_len > 0)
+        {
+
+            UtilityFunctions::debugLog(pem_output_buffer);
+            UtilityFunctions::debugLog("--- END GENERATED CLIENT.PEM ---\n");
+            ffat_write_buffer(GIPR_PRIKEY_FILE_NAME, pem_output_buffer, pem_len, "", "");
+        }
+        else
+        {
+
+            wolfSSL_ERR_error_string_n(pem_len, error_text_buffer, sizeof(error_text_buffer));
+            UtilityFunctions::debugLogf("private key PEM generation failed, error: %d: %s \n", pem_len, error_text_buffer);
+
+            // Free memory objects
+            wc_FreeRsaKey(key);
+            wc_FreeRng(rng);
+            free(der_buffer);
+            free(pem_output_buffer);
+            delete (rng);
+            delete (key);
+            delete (nb);
+            delete (myCert);
+            return false;
+        }
+
+        // Free stack tracking memory objects
+        // Clean up active cryptographic resources safely
+        wc_FreeRsaKey(key);
+        wc_FreeRng(rng);
+
+        // Wipe and release heap buffers safely
+        free(der_buffer);
+        free(pem_output_buffer);
+        delete (rng);
+        delete (key);
+        delete (nb);
+        delete (myCert);
+        return true;
+    }
+
+    /**
+     * @brief Writes a memory buffer to a file on the FFat partition, overwriting previous contents.
+     *
+     * @param path           Absolute path to the file (e.g., "/config.bin")
+     * @param buffer         Pointer to the data source
+     * @param bytes_to_write Number of bytes to copy from the buffer
+     * @return FRESULT       FR_OK on success, or FatFs error code on failure
+     */
+    FRESULT GoogleTvRemote::ffat_write_buffer(const TCHAR *path, const void *buffer, UINT bytes_to_write, String beginMessage, String endMessage)
+    {
+        FIL file;
+        FRESULT res;
+        UINT bytes_written = 0;
+        UINT bytes_writtenTot = 0;
+
+        // FA_CREATE_ALWAYS: Creates a new file. If it already exists, truncates length to 0.
+        // FA_WRITE: Request write-access permissions.
+        res = f_open(&file, path, FA_CREATE_ALWAYS | FA_WRITE);
+        if (res != FR_OK)
+        {
+            std::string resStr = "";
+#if defined(CONFIG_NIMBLE_USE_MAGIC_ENUM)
+            resStr = ((magic_enum::enum_flags_name(res)));
+#endif
+            UtilityFunctions::debugLogf("File %s write error code %i : %s \n", path, res, resStr.c_str());
+            return res;
+        }
+
+        // Write buffer data to the file structure
+        if (!beginMessage.isEmpty())
+        {
+            f_write(&file, beginMessage.c_str(), beginMessage.length(), &bytes_written);
+        }
+        if (res != FR_OK)
+        {
+            std::string resStr = "";
+#if defined(CONFIG_NIMBLE_USE_MAGIC_ENUM)
+            resStr = ((magic_enum::enum_flags_name(res)));
+#endif
+            UtilityFunctions::debugLogf("File %s write error code %i : %s \n", path, res, resStr.c_str());
+            f_close(&file); // Ensure file is closed even if write fails
+            return res;
+        }
+
+        bytes_writtenTot = bytes_writtenTot + bytes_written;
+        bytes_written = 0;
+
+        res = f_write(&file, buffer, bytes_to_write, &bytes_written);
+        if (res != FR_OK)
+        {
+            std::string resStr = "";
+#if defined(CONFIG_NIMBLE_USE_MAGIC_ENUM)
+            resStr = ((magic_enum::enum_flags_name(res)));
+#endif
+            UtilityFunctions::debugLogf("File %s write filed error code %i : %s \n", path, res, resStr.c_str());
+            f_close(&file); // Ensure file is closed even if write fails
+            return res;
+        }
+
+        bytes_writtenTot = bytes_writtenTot + bytes_written;
+        bytes_written = 0;
+
+        // Write buffer data to the file structure
+        if (!endMessage.isEmpty())
+        {
+            f_write(&file, endMessage.c_str(), endMessage.length(), &bytes_written);
+        }
+        if (res != FR_OK)
+        {
+            std::string resStr = "";
+#if defined(CONFIG_NIMBLE_USE_MAGIC_ENUM)
+            resStr = ((magic_enum::enum_flags_name(res)));
+#endif
+            UtilityFunctions::debugLogf("File %s write error code %i : %s \n", path, res, resStr.c_str());
+            f_close(&file); // Ensure file is closed even if write fails
+            return res;
+        }
+
+        bytes_writtenTot = bytes_writtenTot + bytes_written;
+        bytes_written = 0;
+        // Check if the drive ran out of space mid-write
+        if (bytes_writtenTot < ((bytes_to_write + beginMessage.length() + endMessage.length())))
+        {
+            UtilityFunctions::debugLogf("File %s ERROR written only  %i when requested %i \n", path, bytes_writtenTot, (bytes_to_write + beginMessage.length() + endMessage.length()));
+            f_close(&file);
+            return FR_DISK_ERR; // Returns disk error if storage became full
+        }
+
+        // Close the file to flush the sector caches onto the underlying flash memory
+        res = f_close(&file);
+        return res;
     }
 }

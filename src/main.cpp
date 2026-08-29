@@ -6,6 +6,8 @@
 #include <UtilityFunctions.h>
 #include "WebLogPrint.h"
 
+#include <wolfssl/ssl.h>
+
 // auto matically include wifi manager if wifi is enabled
 #ifdef CONFIG_ESP_WIFI_ENABLED
 #include <WiFiManager.h>
@@ -31,16 +33,31 @@ String getSSID() { return wm.getWiFiSSID(); }
 String getPSK() { return wm.getWiFiPass(); }
 #endif
 
+void MyRSATask(void *pvParameters)
+{
+  // Get the handle of the task that created this one
+  TaskHandle_t calling_task = (TaskHandle_t)pvParameters;
+
+  // ... rsa operations ...
+  GoogleIPRemote::GoogleTvRemote::makeNewSelfCertificate();
+
+  // Send a notification directly back to the calling task
+  xTaskNotifyGive(calling_task);
+
+  // Delete the task when finished to free up memory
+  vTaskDelete(NULL);
+}
+
 void setup()
 {
 
-  Serial.begin(115200);
+  Serial.begin(250000);
   // Wait for the serial console to be ready. This is a blocking spin-wait
   // that exits once `Serial` becomes available (host opens serial terminal).
   // Exit condition: `Serial` evaluates true.
-  while (!Serial); // wait for serial attach
+  while (!Serial)
+    ; // wait for serial attach
 
-  
   UtilityFunctions::debugLog("Initializing google tv ip remote...");
   UtilityFunctions::UtilityFunctionsInit(); // Initialize utility functions
 
@@ -75,7 +92,11 @@ void setup()
     UtilityFunctions::debugLog("WIFI is truned off");
 #else
 
-     // reset settings - wipe stored credentials for testing
+    // set time zone
+    setenv("TZ", "CST6CDT,M3.2.0,M11.1.0", 1);
+    tzset();
+
+    // reset settings - wipe stored credentials for testing
     //  these are stored by the esp library
     //  wm.resetSettings();
 
@@ -87,6 +108,11 @@ void setup()
 
     UtilityFunctions::setupWiFiAndConnect();
 
+    esp_log_level_set("*", ESP_LOG_INFO);
+
+    // enable NTP server
+    UtilityFunctions::enableNTPTimeServer("pool.ntp.org");
+
     if (!MDNS.begin("esp32_discovery"))
     {
       UtilityFunctions::ledBlinkRedLong();
@@ -95,6 +121,20 @@ void setup()
     }
 #endif
   }
+
+
+  TaskHandle_t current_task_handle = xTaskGetCurrentTaskHandle();
+
+  // Create the worker task explicitly bound to CPU Core 1
+  xTaskCreatePinnedToCore(
+      MyRSATask,    // Function pointer to your task code
+      "RSA_Worker", // Human-readable string name of the task
+      16384,        // Stack depth allocation (16KB)
+      (void *)current_task_handle, // Task input parameters block 
+      1,                           // Task priority level (Set to 1 or lower)
+      NULL,                        // Task handle tracking instance variable pointer
+      1                            // Core ID Index Target (0 = CPU 0, 1 = CPU 1)
+  );
 }
 
 void loop()
@@ -109,17 +149,17 @@ void loop()
 
     for (;;) // infinite loop
     {
-      
+
       /// do work  handle
       UtilityFunctions::ledBlinkBlue();
-      
+
       /// do work
       UtilityFunctions::delay(500);
       // other updates such as BLE, arduinoIot, web server etc are to be put here
 
 #ifdef CONFIG_ESP_WIFI_ENABLED
-    // put wifi dependent code here for the loop 
-    // Execute the TV search
+      // put wifi dependent code here for the loop
+      // Execute the TV search
       std::vector<GoogleIPRemote::DiscoveredTv> foundTvs = GoogleIPRemote::GoogleTvRemote::scanForTvs();
       // Print the clean summary block
       UtilityFunctions::debugLog("\n===== DISCOVERED GOOGLE TV DEVICES =====");
@@ -146,4 +186,3 @@ void loop()
     }
   }
 }
-

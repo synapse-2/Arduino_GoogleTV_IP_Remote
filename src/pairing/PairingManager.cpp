@@ -1,6 +1,5 @@
 #include "pairing/PairingManager.h"
 
-
 /*
 void addModulusAndExponent(WOLFSSL_X509* cert, Sha256 &sha256) {
     // Lấy Public Key từ chứng chỉ
@@ -68,8 +67,8 @@ bool PairingManager::sendCode(const String& code) {
 
     Serial.printf("[DEBUG]: Sending code: %s\n", code);
 
-    // TODO: làm tiếp 
-    // NOTE: không biết là nó thêm vào kiểu gì nên đợi về nhà xem mới biết được 
+    // TODO: làm tiếp
+    // NOTE: không biết là nó thêm vào kiểu gì nên đợi về nhà xem mới biết được
     WOLFSSL_X509 *server_cert = ssl_get_peer_certificate();
     WOLFSSL_X509 *client_cert = ssl_get_certificate();
 
@@ -116,18 +115,18 @@ bool PairingManager::connected() {
 
 */
 
-void PairingManager::begin(IPAddress host, uint16_t port, String service_name, String model) {
+void PairingManager::begin(IPAddress host, uint16_t port, String service_name, String model)
+{
 
+    // if (ssl_connect(host, port) < 0) {
+    //     Serial.println("[ERROR]: Connection failed!");
+    //     return;
+    // }
 
-    if (ssl_connect(host, port) < 0) {
-        Serial.println("[ERROR]: Connection failed!");
-        return;
-    }
-
-    Serial.printf("[DEBUG]: %s Pairing connected\n", host.toString());
-    uint8_t* buffer = PairingMessageHelper::createPairingRequest(service_name,model);
-    ssl_send((char *) buffer, buffer[0] + 1);
-    free(buffer);
+    // Serial.printf("[DEBUG]: %s Pairing connected\n", host.toString());
+    uint8_t *buffer = PairingMessageHelper::createPairingRequest(service_name, model);
+    //     ssl_send((char *) buffer, buffer[0] + 1);
+    //     free(buffer);
 }
 
 /*
@@ -145,7 +144,7 @@ void PairingManager::loop() {
     chunks.insert(chunks.end(), buffer, buffer + len);
 
     if (chunks.size() > 0 && chunks[0] == chunks.size() - 1) {
-        printPacket(chunks.data(), chunks.size());        
+        printPacket(chunks.data(), chunks.size());
         Pairing__PairingMessage *response = pairing__pairing_message__unpack(NULL, chunks.size() - 1, chunks.data() + 1);
         if (response->status != PAIRING__PAIRING_MESSAGE__STATUS__STATUS_OK) {
             ssl_stop();
@@ -165,21 +164,21 @@ void PairingManager::handleResponse(Pairing__PairingMessage *message) {
         uint8_t* buffer = pairingMessageManager.createPairingOption();
         ssl_send((char *) buffer, buffer[0] + 1);
         free(buffer);
-    } 
+    }
     else if (message->pairing_option) {
         uint8_t* buffer = pairingMessageManager.createPairingConfiguration();
         ssl_send((char *) buffer, buffer[0] + 1);
         free(buffer);
-    } 
+    }
     else if (message->pairing_configuration_ack) {
         Serial.printf("[DEBUG]: Pairing configuration ack\n");
         isSecure = true;
-    } 
+    }
     else if (message->pairing_secret_ack) {
         isSecure = false;
         Serial.printf("[DEBUG]: Paired!\n");
         ssl_stop();
-    } 
+    }
     else {
         Serial.printf("[ERROR]: What Else?\n");
     }
