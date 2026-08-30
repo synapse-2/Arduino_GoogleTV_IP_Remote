@@ -201,8 +201,29 @@ namespace GoogleIPRemote
     {
     }
 
-    bool GoogleTvRemote::createSSLCtx()
+    bool GoogleTvRemote::connectToTV(DiscoveredTv tv, progressCallback callBack)
     {
+        if (ctx == NULL)
+        {
+            createSSLCtx(callBack);
+            return true;
+        }
+
+        return true;
+    }
+
+    bool GoogleTvRemote::createSSLCtx(progressCallback callBack)
+    {
+        char error_text_buffer[80];
+        if (ctx != NULL)
+        {
+            UtilityFunctions::debugLog("Wolfssl ctx already exists, exiting");
+            return true;
+        }
+
+        WOLFSSL_METHOD *method = NULL;
+
+        wolfSSL_Debugging_ON();
         int err = wolfSSL_Init();
         if (err != WOLFSSL_SUCCESS)
         {
@@ -210,6 +231,57 @@ namespace GoogleIPRemote
             UtilityFunctions::debugLogf("Error in crypto lib init %i:%s \n", err, GoogleIPRemote::GoogleTvRemote::getWolfsslTxtError(err));
             return false;
         }
+
+        
+        WOLFSSL_MSG("My Event");
+        method = wolfSSLv23_client_method();
+        if (method == NULL)
+        {
+            ctx = NULL;
+            UtilityFunctions::debugLog("unable to get wolfssl client method");
+            return false;
+        }
+
+        ctx = wolfSSL_CTX_new(method);
+        if (ctx == NULL)
+        {
+            UtilityFunctions::debugLog("unable to get ctx");
+            return false;
+        }
+
+        // do not verify the cert for tv
+        wolfSSL_CTX_set_verify(ctx, WOLFSSL_VERIFY_NONE, NULL);
+
+        // now we need to get our certs in the ctx
+        // validate we have the certs
+        if (!haveSelfCertificate())
+        {
+            // create new self certs this is a long running process
+            if (makeNewSelfCertificate(callBack))
+            {
+                return false;
+            }
+        }
+
+        /* Load server certificates into WOLFSSL_CTX */
+        err = wolfSSL_CTX_use_certificate_file(ctx, GIPR_CERT_FILE_NAME, SSL_FILETYPE_PEM);
+        if (err != SSL_SUCCESS)
+        {
+            wolfSSL_ERR_error_string_n(err, error_text_buffer, sizeof(error_text_buffer));
+            UtilityFunctions::debugLogf("Error in loading cert %i:%s \n", err, error_text_buffer);
+            return false;
+        }
+
+        /* Load keys */
+        err = wolfSSL_CTX_use_PrivateKey_file(ctx, GIPR_PRIKEY_FILE_NAME, SSL_FILETYPE_PEM);
+        if (err != SSL_SUCCESS)
+        {
+            wolfSSL_ERR_error_string_n(err, error_text_buffer, sizeof(error_text_buffer));
+            UtilityFunctions::debugLogf("Error in loading private key %i:%s \n", err, error_text_buffer);
+            return false;
+        }
+
+        return true;
     }
 
     String GoogleTvRemote::getWolfsslTxtError(int error)
@@ -221,7 +293,7 @@ namespace GoogleIPRemote
         return String(error_text_buffer);
     }
 
-    uint8_t *GoogleTvRemote::getSelfCertificate()
+    bool GoogleTvRemote::haveSelfCertificate()
     {
         if (!FFat.begin(true))
         {
@@ -241,33 +313,38 @@ namespace GoogleIPRemote
             {
                 UtilityFunctions::debugLog(STRINGIFY(GIPR_CERT_FILE_NAME + ":file is empty"));
                 file.close();
-                return NULL;
+                return false;
             }
+        }
+        else
+        {
+            // CERT does not exist
+            return false;
+        }
 
-            // Dynamically allocate a clean memory block
-            uint8_t *buffer = (uint8_t *)malloc(file_size);
-            if (buffer == nullptr)
+        file = FFat.open(GIPR_PRIKEY_FILE_NAME, "r");
+        if (file)
+        {
+            // Extract the file footprint size
+            size_t file_size = file.size();
+            if (file_size == 0)
             {
-                UtilityFunctions::debugLogf("malloc allocation failed for bytes:%i \n", file_size);
+                UtilityFunctions::debugLog(STRINGIFY(GIPR_PRIKEY_FILE_NAME + ":file is empty"));
                 file.close();
-                return NULL;
+                return false;
             }
-
-            // Ingest the file data array in a single block pass
-            size_t bytes_read = file.read(buffer, file_size);
-            file.close();
-
-            UtilityFunctions::debugLogf("Read %i bytes successfully from FFat \n", bytes_read);
-            return buffer;
         }
         else
         {
             // CERT does not exist so create a new one nd save
-            return NULL;
+            return false;
         }
+
+        return true;
     }
+
     // make the certs, sign and save on to the FFat partition
-    bool GoogleTvRemote::makeNewSelfCertificate()
+    bool GoogleTvRemote::makeNewSelfCertificate(progressCallback callBack)
     {
         // Output scratch buffers (PEM formatting requires extra room for Base64 wrapping)
         // Allocate heavy scratch buffers dynamically onto the heap to protect the stack
@@ -371,6 +448,14 @@ namespace GoogleIPRemote
         {
             err = wc_MakeRsaKey(key, GIPR_RSA_KEY_LENGTH, (long)65537, rng);
             blockCount++;
+            if (err = FP_WOULDBLOCK)
+            {
+                UtilityFunctions::delay(GIPR_DELAY_TO_YEILD_MiliSec);
+                if (callBack != NULL)
+                {
+                    callBack("Creating RSA Key", blockCount);
+                }
+            }
 
         } while (err == FP_WOULDBLOCK);
 
@@ -391,9 +476,13 @@ namespace GoogleIPRemote
             delete (key);
             delete (nb);
             delete (myCert);
-            return NULL;
+            return false;
         }
 
+        if (callBack != NULL)
+        {
+            callBack("Creating RSA Key", 100);
+        }
         UtilityFunctions::debugLogf("Key generation succeded in %i blocks!  \n", blockCount);
         // Convert Private Key to DER bytes format
         der_len = wc_RsaKeyToDer(key, der_buffer, GIPR_DER_BUFFER);
@@ -443,7 +532,13 @@ namespace GoogleIPRemote
             if (err == FP_WOULDBLOCK || err == WC_PENDING_E)
             {
                 UtilityFunctions::delay(GIPR_DELAY_TO_YEILD_MiliSec);
+
+                if (callBack != NULL)
+                {
+                    callBack("Creating Signed Cert", blockCount / 2000);
+                }
             }
+
             if ((blockCount & 15) == 0)
             {
                 UtilityFunctions::debugLogf("Cert signing .... current block:%i \n", blockCount);
@@ -465,6 +560,11 @@ namespace GoogleIPRemote
             delete (nb);
             delete (myCert);
             return false;
+        }
+
+        if (callBack != NULL)
+        {
+            callBack("Creating Signed Cert", 100);
         }
 
         int cert_len = err;

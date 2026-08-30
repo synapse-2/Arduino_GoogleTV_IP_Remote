@@ -6,8 +6,6 @@
 #include <UtilityFunctions.h>
 #include "WebLogPrint.h"
 
-#include <wolfssl/ssl.h>
-
 // auto matically include wifi manager if wifi is enabled
 #ifdef CONFIG_ESP_WIFI_ENABLED
 #include <WiFiManager.h>
@@ -33,6 +31,15 @@ String getSSID() { return wm.getWiFiSSID(); }
 String getPSK() { return wm.getWiFiPass(); }
 #endif
 
+GoogleIPRemote::GoogleTvRemote *remote = new GoogleIPRemote::GoogleTvRemote();
+
+bool progressCallback(String work, int progPercent)
+{
+
+  UtilityFunctions::debugLogf("%s progress %i \n", work.c_str(), progPercent);
+  return true;
+}
+
 void MyRSATask(void *pvParameters)
 {
   // Get the handle of the task that created this one
@@ -50,7 +57,8 @@ void MyRSATask(void *pvParameters)
 
 void setup()
 {
-
+  esp_log_level_set("*", ESP_LOG_ERROR);
+  
   Serial.begin(250000);
   // Wait for the serial console to be ready. This is a blocking spin-wait
   // that exits once `Serial` becomes available (host opens serial terminal).
@@ -108,8 +116,10 @@ void setup()
 
     UtilityFunctions::setupWiFiAndConnect();
 
-    esp_log_level_set("*", ESP_LOG_INFO);
-
+    esp_log_level_set("wolfssl", ESP_LOG_INFO);
+    esp_log_level_set("tfm", ESP_LOG_INFO);
+    esp_log_level_set("wolfssl_esp32_mp", ESP_LOG_INFO);
+    
     // enable NTP server
     UtilityFunctions::enableNTPTimeServer("pool.ntp.org");
 
@@ -121,20 +131,6 @@ void setup()
     }
 #endif
   }
-
-
-  TaskHandle_t current_task_handle = xTaskGetCurrentTaskHandle();
-
-  // Create the worker task explicitly bound to CPU Core 1
-  xTaskCreatePinnedToCore(
-      MyRSATask,    // Function pointer to your task code
-      "RSA_Worker", // Human-readable string name of the task
-      16384,        // Stack depth allocation (16KB)
-      (void *)current_task_handle, // Task input parameters block 
-      1,                           // Task priority level (Set to 1 or lower)
-      NULL,                        // Task handle tracking instance variable pointer
-      1                            // Core ID Index Target (0 = CPU 0, 1 = CPU 1)
-  );
 }
 
 void loop()
@@ -157,7 +153,7 @@ void loop()
       UtilityFunctions::delay(500);
       // other updates such as BLE, arduinoIot, web server etc are to be put here
 
-#ifdef CONFIG_ESP_WIFI_ENABLED
+#if defined(CONFIG_LWIP_IPV4) || defined(CONFIG_LWIP_IPV6)
       // put wifi dependent code here for the loop
       // Execute the TV search
       std::vector<GoogleIPRemote::DiscoveredTv> foundTvs = GoogleIPRemote::GoogleTvRemote::scanForTvs();
@@ -172,6 +168,14 @@ void loop()
         Serial.printf("Device model: %s\n", tv.model.c_str());
         Serial.printf("Device IP mac: %s\n", tv.ipMac.c_str());
         Serial.println("----------------------------------------");
+      }
+
+      if (foundTvs.size() >= 1)
+      {
+
+        // connet to the first tv
+
+        remote->connectToTV(foundTvs[0],progressCallback);
       }
 
 #endif
