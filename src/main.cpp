@@ -116,8 +116,8 @@ void setup()
 
     UtilityFunctions::setupWiFiAndConnect();
 
-    esp_log_level_set("wolfssl", ESP_LOG_INFO);
-    esp_log_level_set("tfm", ESP_LOG_INFO);
+    //esp_log_level_set("wolfssl", ESP_LOG_INFO);
+    esp_log_level_set("TFM", ESP_LOG_INFO);
     esp_log_level_set("wolfssl_esp32_mp", ESP_LOG_INFO);
     
     // enable NTP server

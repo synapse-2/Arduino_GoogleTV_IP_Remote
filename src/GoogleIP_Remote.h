@@ -86,7 +86,7 @@
 #endif
 
 #ifndef GIPR_RSA_NONBLOCK_TIME
-#define GIPR_RSA_NONBLOCK_TIME 1 // 1 miccrosecs on 240Mhtz
+#define GIPR_RSA_NONBLOCK_TIME 100 // 1 miccrosecs on 240Mhtz
 #endif
 
 #ifndef GIPR_WOLFSSL_ERROR_TXT_BUFF
