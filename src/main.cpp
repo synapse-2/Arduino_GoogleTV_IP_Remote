@@ -57,9 +57,8 @@ void MyRSATask(void *pvParameters)
 
 void setup()
 {
-  esp_log_level_set("*", ESP_LOG_ERROR);
-  
-  Serial.begin(250000);
+
+  Serial.begin(115200);
   // Wait for the serial console to be ready. This is a blocking spin-wait
   // that exits once `Serial` becomes available (host opens serial terminal).
   // Exit condition: `Serial` evaluates true.
@@ -114,12 +113,13 @@ void setup()
     // it will be anonymous AP (wm.autoConnect()) then goes into a blocking loop
     // awaiting configuration and will return success result
 
+    // esp_log_level_set("*",ESP_LOG_ERROR);
+    esp_log_level_set("wifi", ESP_LOG_ERROR);
+    esp_log_level_set("wifi_init", ESP_LOG_ERROR);
+    esp_log_level_set("esp_netif_handlers", ESP_LOG_ERROR);
+    
     UtilityFunctions::setupWiFiAndConnect();
 
-    //esp_log_level_set("wolfssl", ESP_LOG_INFO);
-    esp_log_level_set("TFM", ESP_LOG_INFO);
-    esp_log_level_set("wolfssl_esp32_mp", ESP_LOG_INFO);
-    
     // enable NTP server
     UtilityFunctions::enableNTPTimeServer("pool.ntp.org");
 
@@ -136,6 +136,7 @@ void setup()
 void loop()
 {
   UtilityFunctions::debugLog("LOOP TASK Running...");
+  esp_log_level_set("*", ESP_LOG_INFO);
 
   // Check if the device is in master or slave mode
 
@@ -175,7 +176,7 @@ void loop()
 
         // connet to the first tv
 
-        remote->connectToTV(foundTvs[0],progressCallback);
+        remote->connectToTV(foundTvs[0], progressCallback);
       }
 
 #endif

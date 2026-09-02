@@ -5,21 +5,17 @@
 #include <string>
 #include "FF.h"
 
+#if defined(WOLFSSL_USER_SETTINGS)
 #include <wolfssl/wolfcrypt/settings.h>
-#ifdef WOLFSSL_ESPIDF
-#include <esp_log.h>
-#include <rtc_wdt.h>
+#if defined(WOLFSSL_ESPIDF)
+#include <wolfssl/version.h>
+#include <wolfssl/ssl.h>
+#include <wolfssl/wolfcrypt/types.h>
+#include <wolfcrypt/benchmark/benchmark.h>
+#include <wolfssl/wolfcrypt/port/Espressif/esp-sdk-lib.h>
 #include <wolfssl/wolfcrypt/port/Espressif/esp32-crypt.h>
 #endif
-
-#include <wolfssl/version.h>
-#include <wolfssl/wolfcrypt/types.h>
-// wolfSSL - wolfCrypt options and headers
-#include <wolfssl/ssl.h>
-#include <wolfssl/wolfcrypt/asn.h>
-#include <wolfssl/wolfcrypt/rsa.h>
-#include <wolfssl/wolfcrypt/random.h>
-#include <wolfssl/wolfcrypt/coding.h>
+#endif
 
 #ifndef GIPR_GOOGLEIP_TVPORT_SEND
 #define GIPR_GOOGLEIP_TVPORT_SEND 6466
@@ -95,6 +91,10 @@
 
 #ifndef GIPR_DELAY_TO_YEILD_MiliSec
 #define GIPR_DELAY_TO_YEILD_MiliSec 10
+#endif
+
+#ifndef GIPR_CERT_VOLPREFIX
+#define GIPR_CERT_VOLPREFIX "/ffat" // used for the fopen connand used by wolfssl
 #endif
 
 #ifndef GIPR_CERT_FILE_NAME

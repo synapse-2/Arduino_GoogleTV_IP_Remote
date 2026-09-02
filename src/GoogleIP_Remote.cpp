@@ -1,23 +1,3 @@
-/* wolfSSL */
-/* Always include wolfcrypt/settings.h before any other wolfSSL file.    */
-/* Reminder: settings.h pulls in user_settings.h; don't include it here. */
-/* undefine Arduino as that gives an error in WOLFSSL */
-
-#include <wolfssl/wolfcrypt/settings.h>
-#ifdef WOLFSSL_ESPIDF
-#include <esp_log.h>
-#include <rtc_wdt.h>
-#include <wolfssl/wolfcrypt/port/Espressif/esp32-crypt.h>
-#endif
-
-#include <wolfssl/version.h>
-#include <wolfssl/wolfcrypt/types.h>
-// wolfSSL - wolfCrypt options and headers
-#include <wolfssl/ssl.h>
-#include <wolfssl/wolfcrypt/asn.h>
-#include <wolfssl/wolfcrypt/rsa.h>
-#include <wolfssl/wolfcrypt/random.h>
-#include <wolfssl/wolfcrypt/coding.h>
 
 #include "GoogleIP_Remote.h"
 #include <ESPmDNS.h>
@@ -33,6 +13,24 @@
 #if defined(CONFIG_NIMBLE_USE_MAGIC_ENUM)
 #include "magic_enum/magic_enum.hpp"
 #include "magic_enum/magic_enum_iostream.hpp"
+#endif
+
+/* wolfSSL */
+/* Always include wolfcrypt/settings.h before any other wolfSSL file.    */
+/* Reminder: settings.h pulls in user_settings.h; don't include it here. */
+/* undefine Arduino as that gives an error in WOLFSSL */
+
+#if defined(WOLFSSL_USER_SETTINGS)
+#include <wolfssl/wolfcrypt/settings.h>
+#if defined(WOLFSSL_ESPIDF)
+#include <wolfssl/version.h>
+#include <wolfssl/ssl.h>
+#include <wolfssl/wolfcrypt/types.h>
+#include <wolfcrypt/benchmark/benchmark.h>
+#include <wolfssl/wolfcrypt/port/Espressif/esp-sdk-lib.h>
+#include <wolfssl/wolfcrypt/port/Espressif/esp32-crypt.h>
+#include <wolfssl/wolfcrypt/rsa.h>
+#endif
 #endif
 
 namespace GoogleIPRemote
@@ -203,6 +201,7 @@ namespace GoogleIPRemote
 
     bool GoogleTvRemote::connectToTV(DiscoveredTv tv, progressCallback callBack)
     {
+
         if (ctx == NULL)
         {
             createSSLCtx(callBack);
@@ -214,16 +213,21 @@ namespace GoogleIPRemote
 
     bool GoogleTvRemote::createSSLCtx(progressCallback callBack)
     {
-        char error_text_buffer[80];
+
+        // char *arg = (char *)String("-lng 0 -rsa_sign").c_str();
+        // benchmark_test((void *)arg);
+        wolfSSL_Debugging_ON();
+
         if (ctx != NULL)
         {
             UtilityFunctions::debugLog("Wolfssl ctx already exists, exiting");
             return true;
         }
 
+        // esp_ShowExtendedSystemInfo();
+
         WOLFSSL_METHOD *method = NULL;
 
-        wolfSSL_Debugging_ON();
         int err = wolfSSL_Init();
         if (err != WOLFSSL_SUCCESS)
         {
@@ -232,8 +236,6 @@ namespace GoogleIPRemote
             return false;
         }
 
-        
-        WOLFSSL_MSG("My Event");
         method = wolfSSLv23_client_method();
         if (method == NULL)
         {
@@ -264,21 +266,30 @@ namespace GoogleIPRemote
         }
 
         /* Load server certificates into WOLFSSL_CTX */
-        err = wolfSSL_CTX_use_certificate_file(ctx, GIPR_CERT_FILE_NAME, SSL_FILETYPE_PEM);
+        String fname = (String(GIPR_CERT_VOLPREFIX) + String(GIPR_CERT_FILE_NAME));
+        if ((fopen(fname.c_str(), "rb")) == NULL){
+            UtilityFunctions::debugLogf("FAILED to open cert file %s \n",fname);
+        }
+        err = wolfSSL_CTX_use_certificate_file(ctx, fname.c_str(), SSL_FILETYPE_PEM);
         if (err != SSL_SUCCESS)
         {
-            wolfSSL_ERR_error_string_n(err, error_text_buffer, sizeof(error_text_buffer));
-            UtilityFunctions::debugLogf("Error in loading cert %i:%s \n", err, error_text_buffer);
+        
+            UtilityFunctions::debugLogf("Error in loading cert %i:%s for file %s \n", err, getWolfsslTxtError(err).c_str(), fname.c_str());
             return false;
+        }else{
+             UtilityFunctions::debugLogf("CERT read SUCCESFULLY %s \n",fname.c_str());
         }
 
         /* Load keys */
-        err = wolfSSL_CTX_use_PrivateKey_file(ctx, GIPR_PRIKEY_FILE_NAME, SSL_FILETYPE_PEM);
+        fname = (String(GIPR_CERT_VOLPREFIX) + String(GIPR_PRIKEY_FILE_NAME));
+        err = wolfSSL_CTX_use_PrivateKey_file(ctx, fname.c_str(), SSL_FILETYPE_PEM);
         if (err != SSL_SUCCESS)
         {
-            wolfSSL_ERR_error_string_n(err, error_text_buffer, sizeof(error_text_buffer));
-            UtilityFunctions::debugLogf("Error in loading private key %i:%s \n", err, error_text_buffer);
+            
+            UtilityFunctions::debugLogf("Error in loading private key %i:%s for file %s \n", err, getWolfsslTxtError(err).c_str(), fname.c_str());
             return false;
+        }else{
+             UtilityFunctions::debugLogf("Private KEY Read SUCCESFULLY %s \n",fname.c_str());
         }
 
         return true;
@@ -305,6 +316,7 @@ namespace GoogleIPRemote
 
         // check if we have a cert and provate key on the disk
         File file = FFat.open(GIPR_CERT_FILE_NAME, "r");
+
         if (file)
         {
             // Extract the file footprint size
@@ -367,7 +379,8 @@ namespace GoogleIPRemote
         }
 
         // Initialize random number generator and RSA key structure
-        int err = wc_InitRng(rng);
+        // int err = wc_InitRng(rng);
+        int err = wc_InitRng_ex(rng, NULL, 0);
         if (err != 0)
         {
 
@@ -384,7 +397,8 @@ namespace GoogleIPRemote
             return false;
         }
 
-        err = wc_InitRsaKey(key, NULL);
+        // err = wc_InitRsaKey(key, NULL);
+        err = wc_InitRsaKey_ex(key, NULL, 0);
         if (err != 0)
         {
             wolfSSL_ERR_error_string_n(err, error_text_buffer, sizeof(error_text_buffer));
@@ -400,6 +414,28 @@ namespace GoogleIPRemote
             delete (myCert);
             return false;
         }
+
+#ifdef WC_RSA_BLINDING
+        err = wc_RsaSetRNG(key, rng);
+        if (err != 0)
+        {
+
+            wolfSSL_ERR_error_string_n(err, error_text_buffer, sizeof(error_text_buffer));
+            UtilityFunctions::debugLogf("Key RNG BINDING et failed! %i:%s \n", err, error_text_buffer);
+
+            // Free  memory objects
+            wc_FreeRsaKey(key);
+            wc_FreeRng(rng);
+            free(der_buffer);
+            free(pem_output_buffer);
+            delete (rng);
+            delete (key);
+            delete (nb);
+            delete (myCert);
+            return false;
+        }
+
+#endif
 
         err = wc_RsaSetNonBlock(key, nb);
         if (err != 0)
@@ -446,9 +482,9 @@ namespace GoogleIPRemote
         // UtilityFunctions::disableTWDTimeronIdleTaskOnCore(xPortGetCoreID());
         do
         {
-            err = wc_MakeRsaKey(key, GIPR_RSA_KEY_LENGTH, (long)65537, rng);
+            err = wc_MakeRsaKey(key, ((int)GIPR_RSA_KEY_LENGTH), ((long)65537), rng);
             blockCount++;
-            if (err = FP_WOULDBLOCK)
+            if (err == FP_WOULDBLOCK)
             {
                 UtilityFunctions::delay(GIPR_DELAY_TO_YEILD_MiliSec);
                 if (callBack != NULL)
@@ -461,7 +497,7 @@ namespace GoogleIPRemote
 
         // enable watchdog on idle task
         // UtilityFunctions::enableTWDTimeronIdleTaskOnCore(xPortGetCoreID());
-        if (err < 0)
+        if (err != 0)
         {
 
             wolfSSL_ERR_error_string_n(err, error_text_buffer, sizeof(error_text_buffer));

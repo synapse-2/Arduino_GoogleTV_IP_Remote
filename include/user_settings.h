@@ -108,8 +108,7 @@
 #define WC_NO_CACHE_RESISTANT
 #define WC_RSA_NONBLOCK
 #define WC_RSA_NONBLOCK_TIME
-/* when you want to use SINGLE THREAD. Note Default ESP-IDF is FreeRTOS */
-//#define SINGLE_THREADED
+
 
 //end of -- ADDED for to get the wolfssl to compile ---- such a pain for it to work in dual framework env
 
@@ -124,6 +123,122 @@
 
 /* Paths can be long, ensure the entire value printed during debug */
 #define WOLFSSL_MAX_ERROR_SZ 500
+
+/* wolfSSL Examples: set macros used in example applications.
+ *
+ * These Settings NOT available in ESP-IDF (e.g. esp-tls)
+ *
+ * Any settings needed by ESP-IDF components should be explicitly set,
+ * and not by these example-specific settings via CONFIG_WOLFSSL_EXAMPLE_n
+ *
+ * ESP-IDF settings should be Kconfig "CONFIG_[name]" values when possible. */
+#if defined(CONFIG_WOLFSSL_EXAMPLE_NAME_TEMPLATE)
+    /* See https://github.com/wolfSSL/wolfssl/tree/master/IDE/Espressif/ESP-IDF/examples/template */
+    /* We don't use WiFi, so don't compile in the esp-sdk-lib WiFi helpers: */
+    /* #define USE_WOLFSSL_ESP_SDK_WIFI */
+#elif defined(CONFIG_WOLFSSL_EXAMPLE_NAME_TEST)
+    /* See https://github.com/wolfSSL/wolfssl/tree/master/IDE/Espressif/ESP-IDF/examples/wolfssl_test */
+    /* We don't use WiFi, so don't compile in the esp-sdk-lib WiFi helpers: */
+    /* #define USE_WOLFSSL_ESP_SDK_WIFI */
+    #define TEST_ESPIDF_ALL_WOLFSSL
+    #define HAVE_HKDF
+#elif defined(CONFIG_WOLFSSL_EXAMPLE_NAME_BENCHMARK)
+    /* See https://github.com/wolfSSL/wolfssl/tree/master/IDE/Espressif/ESP-IDF/examples/wolfssl_benchmark */
+    /* We don't use WiFi, so don't compile in the esp-sdk-lib WiFi helpers: */
+    /* #define USE_WOLFSSL_ESP_SDK_WIFI */
+    #define WOLFSSL_BENCHMARK_FIXED_UNITS_KB
+#elif defined(CONFIG_WOLFSSL_EXAMPLE_NAME_TLS_CLIENT)
+    /* See https://github.com/wolfSSL/wolfssl/tree/master/IDE/Espressif/ESP-IDF/examples/wolfssl_client */
+    #define USE_WOLFSSL_ESP_SDK_WIFI
+#elif defined(CONFIG_WOLFSSL_EXAMPLE_NAME_TLS_SERVER)
+    /* See https://github.com/wolfSSL/wolfssl/tree/master/IDE/Espressif/ESP-IDF/examples/wolfssl_server */
+    #define USE_WOLFSSL_ESP_SDK_WIFI
+
+/* wolfSSH Examples */
+#elif defined(CONFIG_WOLFSSL_EXAMPLE_NAME_WOLFSSH_TEMPLATE)
+    /* See https://github.com/wolfSSL/wolfssh/tree/master/ide/Espressif/ESP-IDF/examples/wolfssh_template */
+    #define USE_WOLFSSL_ESP_SDK_WIFI
+#elif defined(CONFIG_WOLFSSL_EXAMPLE_NAME_WOLFSSH_ECHOSERVER)
+    /* See https://github.com/wolfSSL/wolfssh/tree/master/ide/Espressif/ESP-IDF/examples/wolfssh_echoserver */
+    #define USE_WOLFSSL_ESP_SDK_WIFI
+#elif defined(CONFIG_WOLFSSL_EXAMPLE_NAME_ESP32_SSH_SERVER)
+    /* See https://github.com/wolfSSL/wolfssh-examples/tree/main/Espressif/ESP32/ESP32-SSH-Server */
+    #define USE_WOLFSSL_ESP_SDK_WIFI
+#elif defined(CONFIG_WOLFSSL_EXAMPLE_NAME_ESP8266_SSH_SERVER)
+    /* See https://github.com/wolfSSL/wolfssh-examples/tree/main/Espressif/ESP8266/ESP8266-SSH-Server */
+    #define USE_WOLFSSL_ESP_SDK_WIFI
+
+/* wolfMQTT Examples */
+#elif defined(CONFIG_WOLFSSL_EXAMPLE_NAME_WOLFMQTT_TEMPLATE)
+    /* See https://github.com/wolfSSL/wolfMQTT/tree/master/IDE/Espressif/ESP-IDF/examples/wolfmqtt_template */
+    #define USE_WOLFSSL_ESP_SDK_WIFI
+#elif defined(CONFIG_WOLFSSL_EXAMPLE_NAME_WOLFMQTT_AWS_IOT_MQTT)
+    /* See https://github.com/wolfSSL/wolfMQTT/tree/master/IDE/Espressif/ESP-IDF/examples/AWS_IoT_MQTT */
+    #define USE_WOLFSSL_ESP_SDK_WIFI
+
+/* wolfTPM Examples */
+#elif defined(CONFIG_WOLFTPM_EXAMPLE_NAME_ESPRESSIF)
+    /* See https://github.com/wolfSSL/wolfTPM/tree/master/IDE/Espressif */
+    #define USE_WOLFSSL_ESP_SDK_WIFI
+
+/* Apple HomeKit Examples */
+#elif defined(CONFIG_WOLFSSL_APPLE_HOMEKIT)
+    /* See https://github.com/AchimPieters/esp32-homekit-demo */
+
+/* no example selected */
+#elif defined(CONFIG_WOLFSSL_EXAMPLE_NAME_NONE)
+    /* We'll assume the app needs to use wolfSSL sdk lib function */
+    #define USE_WOLFSSL_ESP_SDK_WIFI
+
+/* Other applications detected by cmake */
+#elif defined(APP_ESP_HTTP_CLIENT_EXAMPLE)
+    /* The wolfSSL Version of the client example */
+    #if defined(CONFIG_IDF_TARGET_ESP32S2) || defined(CONFIG_IDF_TARGET_ESP32C2)
+        /* Less memory available, so smaller key sizes: */
+        #define FP_MAX_BITS (4096 * 2)
+    #else
+        #define FP_MAX_BITS (8192 * 2)
+    #endif
+    #define HAVE_ALPN
+    #define HAVE_SNI
+    #define OPENSSL_EXTRA_X509_SMALL
+    #define HAVE_TLS_EXTENSIONS
+    #define HAVE_SUPPORTED_CURVES
+    #define OPENSSL_EXTRA
+    #ifndef WOLFSSL_ALWAYS_VERIFY_CB
+       #define WOLFSSL_ALWAYS_VERIFY_CB
+    #endif
+    #ifndef WOLFSSL_VERIFY_CB_ALL_CERTS
+        #define WOLFSSL_VERIFY_CB_ALL_CERTS
+    #endif
+    #ifndef KEEP_PEER_CERT
+        #define KEEP_PEER_CERT
+    #endif
+
+#elif defined(APP_ESP_HTTP_CLIENT)
+    /* The ESP-IDF Version */
+    #define FP_MAX_BITS (8192 * 2)
+    #define HAVE_ALPN
+    #define HAVE_SNI
+    #define OPENSSL_EXTRA_X509_SMALL
+    #define HAVE_TLS_EXTENSIONS
+    #define HAVE_SUPPORTED_CURVES
+    #define OPENSSL_EXTRA
+    #ifndef WOLFSSL_ALWAYS_VERIFY_CB
+       #define WOLFSSL_ALWAYS_VERIFY_CB
+    #endif
+    #ifndef WOLFSSL_VERIFY_CB_ALL_CERTS
+        #define WOLFSSL_VERIFY_CB_ALL_CERTS
+    #endif
+    #ifndef KEEP_PEER_CERT
+        #define KEEP_PEER_CERT
+    #endif
+#else
+    #ifdef WOLFSSL_ESPIDF
+        /* #warning "App config undetected" */
+    #endif
+    /* the code is older or does not have application name defined. */
+#endif /* Example wolfSSL Configuration app settings */
 
 /* Optional MLKEM (Kyber Post Quantum)               */
 /*  ./configure --enable-mlkem                       */
@@ -162,7 +277,7 @@
     #endif
 #endif
 
-/* Enable AES for all  */
+/* Enable AES for all examples */
 #ifdef NO_AES
     #warning "Found NO_AES, wolfSSL AES Cannot be enabled. Check config."
 #else
@@ -277,8 +392,8 @@
 #endif
 /* See below for chipset detection from sdkconfig.h */
 
-
-
+/* when you want to use SINGLE THREAD. Note Default ESP-IDF is FreeRTOS */
+//#define SINGLE_THREADED
 
 /* Small session cache saves a lot of RAM for ClientCache and SessionCache.
  * Memory requirement is about 5KB, otherwise 20K is needed when not specified.
@@ -290,8 +405,9 @@
 #define WOLFSSL_SMALL_STACK
 
 /* Full debugging turned off, but show malloc failure detail */
-//#define DEBUG_WOLFSSL 
+#define DEBUG_WOLFSSL 
 #define DEBUG_WOLFSSL_MALLOC
+#define WOLFSSL_DEBUG_CERTIFICATE_LOADS
 
 /* See test.c that sets cert buffers; we'll set them here: */
 #define USE_CERT_BUFFERS_256
