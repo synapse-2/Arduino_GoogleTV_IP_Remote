@@ -36,7 +36,7 @@ GoogleIPRemote::GoogleTvRemote *remote = new GoogleIPRemote::GoogleTvRemote();
 bool progressCallback(String work, int progPercent)
 {
 
-  UtilityFunctions::debugLogf("%s progress %i \n", work.c_str(), progPercent);
+  // UtilityFunctions::debugLogf("%s progress %i \n", work.c_str(), progPercent);
   return true;
 }
 
@@ -113,11 +113,12 @@ void setup()
     // it will be anonymous AP (wm.autoConnect()) then goes into a blocking loop
     // awaiting configuration and will return success result
 
-    // esp_log_level_set("*",ESP_LOG_ERROR);
-    esp_log_level_set("wifi", ESP_LOG_ERROR);
-    esp_log_level_set("wifi_init", ESP_LOG_ERROR);
-    esp_log_level_set("esp_netif_handlers", ESP_LOG_ERROR);
-    
+    esp_log_level_set("*", ESP_LOG_ERROR);
+    // esp_log_level_set("wifi", ESP_LOG_ERROR);
+    // esp_log_level_set("wifi_init", ESP_LOG_ERROR);
+    // esp_log_level_set("esp_netif_handlers", ESP_LOG_ERROR);
+    esp_log_level_set("wolfssl", ESP_LOG_DEBUG);
+
     UtilityFunctions::setupWiFiAndConnect();
 
     // enable NTP server
@@ -144,39 +145,42 @@ void loop()
   {
     UtilityFunctions::debugLog(" Starting WIFI Connext ");
 
-    for (;;) // infinite loop
-    {
-
-      /// do work  handle
-      UtilityFunctions::ledBlinkBlue();
-
-      /// do work
-      UtilityFunctions::delay(500);
-      // other updates such as BLE, arduinoIot, web server etc are to be put here
-
 #if defined(CONFIG_LWIP_IPV4) || defined(CONFIG_LWIP_IPV6)
-      // put wifi dependent code here for the loop
-      // Execute the TV search
-      std::vector<GoogleIPRemote::DiscoveredTv> foundTvs = GoogleIPRemote::GoogleTvRemote::scanForTvs();
-      // Print the clean summary block
-      UtilityFunctions::debugLog("\n===== DISCOVERED GOOGLE TV DEVICES =====");
-      for (const auto &tv : foundTvs)
+    // put wifi dependent code here for the loop
+    // Execute the TV search
+    std::vector<GoogleIPRemote::DiscoveredTv> foundTvs = GoogleIPRemote::GoogleTvRemote::scanForTvs();
+    // Print the clean summary block
+    UtilityFunctions::debugLog("\n===== DISCOVERED GOOGLE TV DEVICES =====");
+    for (const auto &tv : foundTvs)
+    {
+      Serial.printf("Device host Name: %s\n", tv.hostName.c_str());
+      Serial.printf("IP Address:  %s\n", tv.ip.c_str());
+      Serial.printf("BT MAC Address: %s\n", tv.btMac.c_str());
+      Serial.printf("Device friendly Name: %s\n", tv.friendlyName.c_str());
+      Serial.printf("Device model: %s\n", tv.model.c_str());
+      Serial.printf("Device IP mac: %s\n", tv.ipMac.c_str());
+      Serial.println("----------------------------------------");
+    }
+
+    if (foundTvs.size() >= 1)
+    {
+      // connet to the first tv
+
+       remote->connectToTV(foundTvs[0], progressCallback);
+
+
+      for (;;) // infinite loop
       {
-        Serial.printf("Device host Name: %s\n", tv.hostName.c_str());
-        Serial.printf("IP Address:  %s\n", tv.ip.c_str());
-        Serial.printf("BT MAC Address: %s\n", tv.btMac.c_str());
-        Serial.printf("Device friendly Name: %s\n", tv.friendlyName.c_str());
-        Serial.printf("Device model: %s\n", tv.model.c_str());
-        Serial.printf("Device IP mac: %s\n", tv.ipMac.c_str());
-        Serial.println("----------------------------------------");
-      }
 
-      if (foundTvs.size() >= 1)
-      {
+        /// do work  handle
+        UtilityFunctions::debugLog("begin loop");
+        UtilityFunctions::ledBlinkBlue();
 
-        // connet to the first tv
+        remote->loopRemoteConnection();
 
-        remote->connectToTV(foundTvs[0], progressCallback);
+        /// do work
+        UtilityFunctions::delay(500);
+        // other updates such as BLE, arduinoIot, web server etc are to be put here
       }
 
 #endif

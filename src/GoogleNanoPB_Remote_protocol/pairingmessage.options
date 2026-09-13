@@ -5,3 +5,7 @@ Pairing.PairingRequest.client_name          type:FT_POINTER
 Pairing.PairingRequest.service_name         type:FT_POINTER
 
 Pairing.PairingRequestAck.server_name       type:FT_POINTER
+
+# Force these specific pairing parameters to become flat fixed-size arrays maxed at 10 items
+Pairing.PairingOption.input_encodings max_count:1
+Pairing.PairingOption.output_encodings max_count:1

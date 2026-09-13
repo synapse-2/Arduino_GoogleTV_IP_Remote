@@ -1,0 +1,46 @@
+WIFI return 6 
+Connecting to WiFi.. status 3 
+host_name = Android,IP = 192.168.10.114,mac_address = DC:E9:94:91:48:DA
+Found TV IP: 192.168.10.114
+[INFO]: starting arduino loop
+[ERROR]: not authorized so starting pairing protocol
+[DEBUG]: Successfully called wolfSSL_Init
+[DEBUG]: Initializing certificates...
+[DEBUG]: Success: use certificate: 
+CTX_SERVER_CERT
+[DEBUG]: Success:remote client use private key buffer: 
+CTX_SERVER_KEY
+[DEBUG]: Successfully connected to the server port 6467 
+[DEBUG]: Success: calling wolfSSL_Init
+[ERROR]: Create WOLFSSL object from ctx
+unknown error number
+[DEBUG]: Successfully connected to the server
+[DEBUG]: 192.168.10.114 Pairing connected
+[sending]: pair request packet:unit8array: [30, 8, 2, 16, 200, 1, 82, 23, 10, 12, 115, 101, 114, 118, 105, 99, 101, 95, 110, 97, 109, 101, 18, 7, 71, 101, 110, 101, 114, 105, 99,]
+hex: 1E080210C80152170A0C736572766963655F6E616D65120747656E65726963
+In pairing loop
+In pairing loop
+In pairing loop
+[DEBUG]: Pairing request ack received packet:unit8array: [7, 8, 2, 16, 200, 1, 90, 0,]
+hex: 07080210C8015A00
+[sending]: pair option packet:unit8array: [16, 8, 2, 16, 200, 1, 162, 1, 8, 10, 4, 8, 3, 16, 6, 24, 1,]
+hex: 10080210C801A201080A04080310061801
+In pairing loop
+In pairing loop
+In pairing loop
+In pairing loop
+In pairing loop
+In pairing loop
+[DEBUG]: Pairing option received packet:unit8array: [16, 8, 2, 16, 200, 1, 162, 1, 8, 18, 4, 8, 3, 16, 6, 24, 1,]
+hex: 10080210C801A201081204080310061801
+In pairing loop
+In pairing loop
+In pairing loop
+[DEBUG]: Pairing configuration ack received packet
+unit8array: [8, 8, 2, 16, 200, 1, 250, 1, 0,]
+hex: 08080210C801FA0100
+Enter code: 
+Enter code: 
+Enter code: 
+Enter code: 
+Enter code: 

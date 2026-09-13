@@ -65,8 +65,8 @@ message PairingMessage {
   }
   int32 protocol_version = 1;
   Status status = 2;
-  int32 playload_size = 3;
-  oneof payload{
+  //int32 playload_size = 3;
+
     PairingRequest pairing_request = 10;
     PairingRequestAck pairing_request_ack = 11;
     PairingOption pairing_option = 20;
@@ -74,5 +74,5 @@ message PairingMessage {
     PairingConfigurationAck pairing_configuration_ack = 31;
     PairingSecret pairing_secret = 40;
     PairingSecretAck pairing_secret_ack = 41;
-  }
+  
 }
