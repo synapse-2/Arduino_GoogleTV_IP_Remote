@@ -10,6 +10,18 @@
 #include "FF.h"
 #include "esp_task_wdt.h" // Required to manually feed the watchdog
 
+#include <stdio.h>
+#include <string.h>
+#include <sys/param.h>
+#include <pb_decode.h>
+#include "remotemessage.pb.h"
+
+// Essential BSD Socket / LwIP headers
+#include "lwip/err.h"
+#include "lwip/sockets.h"
+#include "lwip/sys.h"
+#include <lwip/netdb.h>
+
 #if defined(CONFIG_NIMBLE_USE_MAGIC_ENUM)
 #include "magic_enum/magic_enum.hpp"
 #include "magic_enum/magic_enum_iostream.hpp"
@@ -197,18 +209,139 @@ namespace GoogleIPRemote
 
     GoogleTvRemote::GoogleTvRemote()
     {
+
+        // we are not paried
+        is_paired = false;
     }
 
     bool GoogleTvRemote::connectToTV(DiscoveredTv tv, progressCallback callBack)
     {
+        tvInit = tv;
+        callBackInit = callBack;
 
         if (ctx == NULL)
         {
             createSSLCtx(callBack);
-            return true;
         }
 
+        if (!makeSSLConnectRemote(tv, callBack))
+        {
+            return false;
+        }
         return true;
+    }
+
+    void GoogleTvRemote::loopRemoteConnection()
+    {
+        if (!isConnected())
+        {
+            return;
+        }
+
+        uint8_t buffer[256];
+        int len = wolfSSL_read(ssl, &buffer, sizeof(buffer));
+        if (len <= 0)
+        {
+            if (isPaired())
+            {
+                UtilityFunctions::debugLog("ERROR in read from TV remote and we were paired we are disconnecting");
+                disconnect();
+                return;
+            }
+            else
+            {
+                // ok we need to be in paring mode we are not paired and  this is the initial connecction
+                disconnect();
+                is_paired = false;
+                makeSSLConnectPairing(tvInit, callBackInit);
+
+                // send pairing request
+                Pairing_PairingRequest *req = createPairingRequest();
+                uint8_t *buffer = pack_message(*req);
+                if (wolfSSL_send(ssl, buffer, sizeof(buffer), 0) < sizeof(buffer))
+                {
+                    UtilityFunctions::debugLog("ERROR failed to send pairing request - disconnecting");
+                    disconnect();
+                }
+                free(buffer);
+                return;
+            }
+        }
+        readDataCunks.insert(readDataCunks.end(), buffer, buffer + len);
+
+        if (readDataCunks.size() > 0 && readDataCunks[0] == readDataCunks.size() - 1)
+        {
+            printPacket(readDataCunks.data(), readDataCunks.size());
+            if (!is_paired)
+            {
+
+                Pairing_PairingMessage *message = unpack_paring_message(readDataCunks.data(), readDataCunks.size());
+                if (message != NULL)
+                {
+                    // paring protocol
+                    if (message->which_payload == Pairing_PairingMessage_pairing_request_ack_tag)
+                    {
+                        UtilityFunctions::debugLog("[DEBUG]: Pairing request ack received packet:");
+                        printPacket(readDataCunks.data(), readDataCunks.size());
+
+                        pb_release(Pairing_PairingRequest_fields, &message);
+                        Pairing_PairingMessage *buffer = createParingOptionMsg();
+                        wolfSSL_send(ssl, buffer, sizeof(buffer),0);
+                        free(buffer);
+                    }
+                    else if (message->pairing_option)
+                    {
+                        UtilityFunctions::debugLog("[DEBUG]: Pairing option received packet:");
+                        printPacket(chunks.data(), chunks.size());
+                        // uint8_t *buffer = pairingMessageManager.createPairingConfiguration();
+                        // ssl_send((char *)buffer, buffer[0] + 1);
+                        // free(buffer);
+                    }
+                    else if (message->pairing_configuration_ack)
+                    {
+                        UtilityFunctions::debugLog("[DEBUG]: Pairing configuration ack received packet\n");
+                        printPacket(chunks.data(), chunks.size());
+                    }
+                    else if (message->pairing_secret_ack)
+                    {
+                        UtilityFunctions::debugLog("[DEBUG]: Pairing secret ack received packet:");
+                        printPacket(chunks.data(), chunks.size());
+                        isSecure = false;
+                        UtilityFunctions::debugLog("[DEBUG]: Paired!\n");
+                    }
+                    else
+                    {
+                        UtilityFunctions::debugLog("[DEBUG]: Unkown type packet receivepacket:");
+                        printPacket(chunks.data(), chunks.size());
+                    }
+                }
+            }
+            else
+            {
+                Remote_RemoteMessage *message = unpack_remote_message(readDataCunks.data(), readDataCunks.size());
+            }
+        }
+    }
+
+    void GoogleTvRemote::disconnect()
+    {
+        if (ssl != NULL)
+        {
+            wolfSSL_free(ssl);
+            ssl = NULL;
+        }
+
+        if (sockFD != -1)
+        {
+            close(sockFD);
+            sockFD = -1;
+        }
+
+        if (ctx != NULL)
+        {
+            wolfSSL_CTX_free(ctx);
+            ctx = NULL;
+        }
     }
 
     bool GoogleTvRemote::createSSLCtx(progressCallback callBack)
@@ -267,17 +400,20 @@ namespace GoogleIPRemote
 
         /* Load server certificates into WOLFSSL_CTX */
         String fname = (String(GIPR_CERT_VOLPREFIX) + String(GIPR_CERT_FILE_NAME));
-        if ((fopen(fname.c_str(), "rb")) == NULL){
-            UtilityFunctions::debugLogf("FAILED to open cert file %s \n",fname);
+        if ((fopen(fname.c_str(), "rb")) == NULL)
+        {
+            UtilityFunctions::debugLogf("FAILED to open cert file %s \n", fname);
         }
         err = wolfSSL_CTX_use_certificate_file(ctx, fname.c_str(), SSL_FILETYPE_PEM);
         if (err != SSL_SUCCESS)
         {
-        
+
             UtilityFunctions::debugLogf("Error in loading cert %i:%s for file %s \n", err, getWolfsslTxtError(err).c_str(), fname.c_str());
             return false;
-        }else{
-             UtilityFunctions::debugLogf("CERT read SUCCESFULLY %s \n",fname.c_str());
+        }
+        else
+        {
+            UtilityFunctions::debugLogf("CERT read SUCCESFULLY %s \n", fname.c_str());
         }
 
         /* Load keys */
@@ -285,14 +421,346 @@ namespace GoogleIPRemote
         err = wolfSSL_CTX_use_PrivateKey_file(ctx, fname.c_str(), SSL_FILETYPE_PEM);
         if (err != SSL_SUCCESS)
         {
-            
+
             UtilityFunctions::debugLogf("Error in loading private key %i:%s for file %s \n", err, getWolfsslTxtError(err).c_str(), fname.c_str());
             return false;
-        }else{
-             UtilityFunctions::debugLogf("Private KEY Read SUCCESFULLY %s \n",fname.c_str());
+        }
+        else
+        {
+            UtilityFunctions::debugLogf("Private KEY Read SUCCESFULLY %s \n", fname.c_str());
         }
 
         return true;
+    }
+
+    bool GoogleTvRemote::makeSSLConnectRemote(DiscoveredTv tv, progressCallback callBack)
+    {
+
+        return makeSSLConnectBase(tv, callBack, true);
+    }
+
+    bool GoogleTvRemote::makeSSLConnectPairing(DiscoveredTv tv, progressCallback callBack)
+    {
+
+        return makeSSLConnectBase(tv, callback, false);
+    }
+
+    bool GoogleTvRemote::makeSSLConnectBase(DiscoveredTv tv, progressCallback callBack, bool paring_complete)
+    {
+        // Set underlying raw socket to Non-Blocking
+        if (sockFD == -1)
+        {
+            sockFD = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+        }
+        else
+        {
+            UtilityFunctions::debugLog("SSL socket already open");
+            return false;
+        }
+        int flags = fcntl(sockFD, F_GETFL, 0);
+        fcntl(sockFD, F_SETFL, flags | O_NONBLOCK);
+
+        struct sockaddr_in dest_addr;
+        dest_addr.sin_addr.s_addr = inet_addr(tv.ip.c_str());
+        dest_addr.sin_family = AF_INET;
+        if (paring_complete)
+        {
+            dest_addr.sin_port = htons(GIPR_GOOGLEIP_TVPORT_SEND);
+        }
+        else
+        {
+            dest_addr.sin_port = htons(GIPR_GOOGLEIP_TVPORT_PAIRING);
+        }
+
+        // Start non-blocking raw TCP connection
+        int res = connect(sockFD, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+        if (res < 0 && errno != EINPROGRESS)
+        {
+            UtilityFunctions::debugLog("TCP Connection failed immediately");
+            close(sockFD);
+            sockFD = -1;
+            ssl = NULL;
+            return false;
+        }
+
+        //  Wait for TCP Connection completion using select()
+        if (res < 0 && errno == EINPROGRESS)
+        {
+            fd_set write_set;
+            FD_ZERO(&write_set);
+            FD_SET(sockFD, &write_set);
+
+            struct timeval timeout = {.tv_sec = 5, .tv_usec = 0}; // 5 second connection timeout
+
+            int select_res = select(sockFD + 1, NULL, &write_set, NULL, &timeout);
+            if (select_res <= 0)
+            {
+                UtilityFunctions::debugLog("TCP Connection timeout or select error");
+                close(sockFD);
+                sockFD = -1;
+                ssl = NULL;
+                return false;
+            }
+
+            // Verify if connection actually succeeded or if the port was closed
+            int sock_err = 0;
+            socklen_t len = sizeof(sock_err);
+            if (getsockopt(sockFD, SOL_SOCKET, SO_ERROR, &sock_err, &len) < 0 || sock_err != 0)
+            {
+                UtilityFunctions::debugLogf("TCP Connection async failure, socket error: %d \n", sock_err);
+                close(sockFD);
+                sockFD = -1;
+                ssl = NULL;
+                return false;
+            }
+        }
+
+        if (ctx == NULL)
+        {
+            if (!createSSLCtx(callBack))
+            {
+                return false;
+            }
+        }
+
+        wolfSSL_SetIORecv(ctx, SSLReceiveBytes); // Registers system recv()
+        wolfSSL_SetIOSend(ctx, SSLSendBytes);    // Registers system send()
+
+        ssl = wolfSSL_new(ctx);
+        if (ssl == NULL)
+        {
+            UtilityFunctions::debugLog("Failed to create wolfSSL session object");
+            close(sockFD);
+            sockFD = -1;
+            return false;
+        }
+        wolfSSL_set_fd(ssl, sockFD);
+        // Explicitly register the standard BSD I/O system callbacks
+
+        // Complete Non-Blocking SSL/TLS Protocol Handshake Loop
+        int ssl_err = 0;
+        while (1)
+        {
+            res = wolfSSL_connect(ssl);
+            ssl_err = wolfSSL_get_error(ssl, res);
+
+            if (res == WOLFSSL_SUCCESS)
+            {
+                UtilityFunctions::debugLog("SSL Handshake Completed Successfully!");
+                break;
+            }
+
+            if (ssl_err == WOLFSSL_ERROR_WANT_READ || ssl_err == WOLFSSL_ERROR_WANT_WRITE)
+            {
+                // Wait briefly to allow hardware stack to process incoming routing structures
+                UtilityFunctions::delay(10);
+            }
+            else
+            {
+
+                UtilityFunctions::debugLogf("SSL Handshake broken downstream: %i: %s \n", ssl_err, getWolfsslTxtError(ssl_err));
+                wolfSSL_free(ssl);
+                ssl = NULL;
+                close(sockFD);
+                sockFD = -1;
+                wolfSSL_CTX_free(ctx);
+                ctx = NULL;
+                return false;
+            }
+        }
+        return true;
+    }
+
+    int GoogleTvRemote::SSLSendBytes(WOLFSSL *ssl, char *msg, int sz, void *ctx)
+    {
+        int sock = *(int *)ctx;
+
+        int sent = send(sock, msg, sz, 0);
+
+        if (sent > 0)
+        {
+            return sent; // Success: Return bytes written to network interface
+        }
+
+        if (errno == EWOULDBLOCK || errno == EAGAIN)
+        {
+            // [CRITICAL] Outbound kernel buffer full, retry when writable
+            return WOLFSSL_CBIO_ERR_WANT_WRITE;
+        }
+
+        if (errno == EPIPE || errno == ECONNRESET)
+        {
+            return WOLFSSL_CBIO_ERR_CONN_CLOSE;
+        }
+
+        return WOLFSSL_CBIO_ERR_GENERAL;
+    }
+
+    int GoogleTvRemote::SSLReceiveBytes(WOLFSSL *ssl, char *reply, int sz, void *ctx)
+    {
+        int sock = *(int *)ctx;
+
+        // Call the underlying non-blocking socket layer
+        int recvd = recv(sock, reply, sz, 0);
+
+        if (recvd > 0)
+        {
+            return recvd; // Success: Return number of bytes processed
+        }
+
+        if (recvd == 0)
+        {
+            return WOLFSSL_CBIO_ERR_CONN_CLOSE; // Remote peer disconnected cleanly
+        }
+
+        // recvd is -1: Inspect the specific LwIP errno
+        if (errno == EWOULDBLOCK || errno == EAGAIN)
+        {
+            // Inform wolfSSL to yield and poll later without failing
+            return WOLFSSL_CBIO_ERR_WANT_READ;
+        }
+
+        if (errno == ECONNRESET)
+        {
+            return WOLFSSL_CBIO_ERR_CONN_RST; // Connection hard-reset by peer
+        }
+
+        return WOLFSSL_CBIO_ERR_GENERAL; // Any other fatal socket exception
+    }
+
+    Pairing_PairingMessage *GoogleTvRemote::unpack_paring_message(const uint8_t *buffer, size_t buffer_length)
+    {
+        // Allocate your generated target structure on the stack
+        // (Always zero-initialize with the NanoPB macro to clear junk memory)
+        Pairing_PairingMessage *message = new (Pairing_PairingMessage);
+        *message = Pairing_PairingMessage_init_zero;
+
+        // Create an input stream pointing to your raw data buffer
+        pb_istream_t stream = pb_istream_from_buffer(buffer, buffer_length);
+
+        // Unpack/Decode the payload
+        if (!pb_decode(&stream, Pairing_PairingMessage_fields, &message))
+        {
+            // Handle decoding failure
+            UtilityFunctions::debugLog("decoding failed");
+            return NULL;
+        }
+
+        // Clean up any allocated sub-fields (Only needed if you use dynamic callbacks/pointers)
+        // pb_release(Remote_Message_fields, &message);
+
+        return message;
+    }
+
+    Remote_RemoteMessage *GoogleTvRemote::unpack_remote_message(const uint8_t *buffer, size_t buffer_length)
+    {
+        // Allocate your generated target structure on the stack
+        // (Always zero-initialize with the NanoPB macro to clear junk memory)
+        Remote_RemoteMessage *message = new (Remote_RemoteMessage);
+        *message = Remote_RemoteMessage_init_zero;
+
+        // Create an input stream pointing to your raw data buffer
+        pb_istream_t stream = pb_istream_from_buffer(buffer, buffer_length);
+
+        // Unpack/Decode the payload
+        if (!pb_decode(&stream, Remote_RemoteMessage_fields, &message))
+        {
+            // Handle decoding failure
+            UtilityFunctions::debugLog("decoding failed");
+            return NULL;
+        }
+
+        // (If your fields contain sub-messages or specific payloads)
+        // process_payload(message);
+
+        //  Clean up any allocated sub-fields (Only needed if you use dynamic callbacks/pointers)
+        // pb_release(Remote_Message_fields, &message);
+
+        return message;
+    }
+
+    Pairing_PairingRequest *GoogleTvRemote::createPairingRequest()
+    {
+        Pairing_PairingRequest *message = new Pairing_PairingRequest();
+        message = Pairing_PairingRequest_init_zero;
+
+        message->service_name = "service_name";
+        message->client_name = UtilityFunctions::loadLocalHostname.c_str();
+
+        return message;
+    }
+
+    uint_8 *GoogleTvRemote::pack_message(Pairing_PairingRequest msg)
+    {
+        uint_8 *buffer = new uint_8(sizeof(msg));
+
+        pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+
+        if (!pb_encode(&stream, Pairing_PairingRequest_fields, msg))
+        {
+            UtilityFunctions::debugLogf("Protobuf encoding failed: %s \n", PB_GET_ERROR(&stream));
+            return NULL;
+        }
+
+        return buffer;
+    }
+
+    Pairing_PairingMessage *GoogleTvRemote::createParingOptionMsg()
+    {
+
+        Pairing_PairingMessage *message = new Pairing_PairingMessage();
+        message = Pairing_PairingMessage_init_zero;
+
+        message->status = Pairing_PairingMessage_Status_STATUS_OK;
+        message->protocol_version = 2;
+
+        message->which_payload = Pairing_PairingMessage_pairing_option_tag;
+        message->pairing_option = Pairing_PairingOption_init_default;
+
+        message->pairing_option.preferred_role = Pairing_RoleType.Pairing_RoleType_ROLE_TYPE_INPUT;
+
+        message->pairing_option.input_encodings.encodings[0].type = PAIRING__PAIRING_ENCODING__ENCODING_TYPE__ENCODING_TYPE_HEXADECIMAL;
+        message->pairing_option.input_encodings.encodings[0].symbol_length = 6;
+
+        message->pairing_option.input_encodings_count = 1;
+
+        message->playload_size = sizeof(pairing_option);
+
+        return message;
+    }
+
+    bool GoogleTvRemote::isConnected()
+    {
+        if (sockFD == -1)
+        {
+            return false;
+        }
+
+        char buffer;
+        // Peek at 1 byte from the network queue instantly
+        int res = recv(sockFD, &buffer, 1, MSG_PEEK | MSG_DONTWAIT);
+
+        if (res == 0)
+        {
+            sockFD = -1;
+            return false; // Remote server disconnected cleanly
+        }
+        if (res < 0)
+        {
+            if (errno == EWOULDBLOCK || errno == EAGAIN)
+            {
+                return true; // Still connected, no data waiting
+            }
+
+            sockFD = -1;
+            return false; // Hard connection failure
+        }
+        return true; // Still connected, data is waiting to be read
+    }
+
+    void GoogleTvRemote::unPair()
+    {
+        is_paired = false;
     }
 
     String GoogleTvRemote::getWolfsslTxtError(int error)
@@ -302,6 +770,27 @@ namespace GoogleIPRemote
         // Convert the negative integer (e.g. -132) into descriptive text
         wolfSSL_ERR_error_string_n(error, error_text_buffer, sizeof(error_text_buffer));
         return String(error_text_buffer);
+    }
+
+    void GoogleTvRemote::printPacket(uint8_t *packet, size_t len)
+    {
+        UtilityFunctions::debugLog("unit8array: [");
+        for (size_t i = 0; i < len; i++)
+        {
+            UtilityFunctions::debugLogf("0x%02X", packet[i]);
+            if (i < len - 1)
+            {
+                UtilityFunctions::debugLogf(", ");
+            }
+        }
+        UtilityFunctions::debugLog("]");
+
+        UtilityFunctions::debugLogf("hex: ");
+        for (size_t i = 0; i < len; i++)
+        {
+            UtilityFunctions::debugLogf("%02X", packet[i]);
+        }
+        UtilityFunctions::debugLog();
     }
 
     bool GoogleTvRemote::haveSelfCertificate()
@@ -679,6 +1168,11 @@ namespace GoogleIPRemote
         delete (nb);
         delete (myCert);
         return true;
+    }
+
+    bool GoogleTvRemote::isPaired()
+    {
+        return is_paired;
     }
 
     /**

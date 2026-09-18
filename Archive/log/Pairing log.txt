@@ -1,0 +1,72 @@
+---- Opened the serial port COM5 ----
+WIFI return 6 
+Connecting to WiFi.. status 6 
+Connecting to WiFi.. status 6 
+Hello, world!
+WIFI return 6 
+Connecting to WiFi.. status 3 
+host_name = Android-2,IP = 192.168.10.114,mac_address = DC:E9:94:91:48:DA
+Found TV IP:  3 ?
+[DEBUG]: Successfully called wolfSSL_Init
+[DEBUG]: Initializing certificates...
+[DEBUG]: Success: use certificate: 
+CTX_SERVER_CERT
+[DEBUG]: Success: use private key buffer: 
+CTX_SERVER_KEY
+[DEBUG]: Successfully connected to the server
+[DEBUG]: Success: calling wolfSSL_Init
+[ERROR]: Create WOLFSSL object from ctx
+unknown error number
+[DEBUG]: Successfully connected to the server
+[DEBUG]: 192.168.10.114:6466 Pairing connected
+[INFO]: start loop
+[ERROR]: Read failed ie assuming not authorized
+[ERROR]: not authorized so starting pairing protocol
+[DEBUG]: Successfully called wolfSSL_Init
+[DEBUG]: Initializing certificates...
+[DEBUG]: Success: use certificate: 
+CTX_SERVER_CERT
+[DEBUG]: Success: use private key buffer: 
+CTX_SERVER_KEY
+[DEBUG]: Successfully connected to the server
+[DEBUG]: Success: calling wolfSSL_Init
+[ERROR]: Create WOLFSSL object from ctx
+unknown error number
+[DEBUG]: Successfully connected to the server
+[DEBUG]: 192.168.10.114 Pairing connected
+In pairing loop
+In pairing loop
+In pairing loop
+[DEBUG]: Pairing request ack received packet:unit8array: [0x07, 0x08, 0x02, 0x10, 0xC8, 0x01, 0x5A, 0x00]
+hex: 07080210C8015A00
+
+In pairing loop
+In pairing loop
+In pairing loop
+In pairing loop
+In pairing loop
+In pairing loop
+[DEBUG]: Pairing option received packet:unit8array: [0x10, 0x08, 0x02, 0x10, 0xC8, 0x01, 0xA2, 0x01, 0x08, 0x12, 0x04, 0x08, 0x03, 0x10, 0x06, 0x18, 0x01]
+hex: 10080210C801A201081204080310061801
+
+In pairing loop
+In pairing loop
+In pairing loop
+[DEBUG]: Pairing configuration ack received packet
+unit8array: [0x08, 0x08, 0x02, 0x10, 0xC8, 0x01, 0xFA, 0x01, 0x00]
+hex: 08080210C801FA0100
+
+Enter code: 
+Enter code: 
+Enter code: 
+Enter code: 
+Enter code: 
+Enter code: 
+Enter code: 
+Enter code: 
+Enter code: 
+Enter code: 
+Enter code: 
+Enter code: 
+Enter code: 
+---- Closed the serial port COM5 ----

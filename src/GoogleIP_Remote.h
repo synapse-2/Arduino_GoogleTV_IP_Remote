@@ -4,6 +4,10 @@
 #include <vector>
 #include <string>
 #include "FF.h"
+#include "lwip/sockets.h"
+#include <sys/param.h>
+#include "remotemessage.pb.h"
+#include "pairingmessage.pb.h"
 
 #if defined(WOLFSSL_USER_SETTINGS)
 #include <wolfssl/wolfcrypt/settings.h>
@@ -19,6 +23,10 @@
 
 #ifndef GIPR_GOOGLEIP_TVPORT_SEND
 #define GIPR_GOOGLEIP_TVPORT_SEND 6466
+#endif
+
+#ifndef GIPR_GOOGLEIP_TVPORT_PAIRING
+#define GIPR_GOOGLEIP_TVPORT_PAIRING 6467
 #endif
 
 #ifndef GIPR_ANDRIOD_TV_RMOETE_SERVICE
@@ -133,13 +141,20 @@ namespace GoogleIPRemote
         ~GoogleTvRemote();
 
         bool connectToTV(DiscoveredTv tv, progressCallback callBack = NULL);
+        void loopRemoteConnection();
+        bool isConnected();
+        bool isPaired();
+        void unPair();
+
+        void disconnect();
 
         // get the TV's on the IP network
         static std::vector<DiscoveredTv> scanForTvs();
         static bool haveSelfCertificate();
         static bool makeNewSelfCertificate(progressCallback callBack = NULL);
-        static String getWolfsslTxtError(int error);
+     
 
+        static String getWolfsslTxtError(int error);
 
         // Connection lifecycle
         // bool connect(const char *ipAddress, const char *clientCert, const char *clientKey);
@@ -156,13 +171,32 @@ namespace GoogleIPRemote
         static void forceArpResolution(const String &ipStr);
         static FRESULT ffat_write_buffer(const TCHAR *path, const void *buffer, UINT bytes_to_write, String beginMessage, String endMessage);
         bool createSSLCtx(progressCallback callBack);
+        bool makeSSLConnectBase(DiscoveredTv tv, progressCallback callBack, bool paring_complete);
+        bool makeSSLConnectRemote(DiscoveredTv tv, progressCallback callBack);
+        bool makeSSLConnectPairing(DiscoveredTv tv, progressCallback callBack);
 
-        const char *_ip;
+        static int SSLSendBytes(WOLFSSL *ssl, char *msg, int sz, void *ctx);
+        static int SSLReceiveBytes(WOLFSSL *ssl, char *reply, int sz, void *ctx);
+
+        static Remote_RemoteMessage *unpack_remote_message(const uint8_t *buffer, size_t buffer_length);
+        static Pairing_PairingMessage *unpack_paring_message(const uint8_t *buffer, size_t buffer_length);
+
+        static Pairing_PairingRequest* createPairingRequest();
+        static uint8_t * pack_message(Pairing_PairingRequest msg);
+
+        static Pairing_PairingMessage* createParingOptionMsg();
+        static void printPacket(uint8_t *packet, size_t len);
+
         unsigned long _lastPingTime;
         const unsigned long _pingInterval = 5000; // Keep-alive interval
-        bool is_connceted = false;
-        bool is_paired = false; 
-        WOLFSSL_CTX* ctx = NULL;
+        bool is_paired = false;
+        WOLFSSL_CTX *ctx = NULL;
+        WOLFSSL *ssl = NULL;
+        int sockFD = -1;
+        DiscoveredTv tvInit;
+        progressCallback callBackInit; 
+
+        std::vector<uint8_t> readDataCunks;
 
         // Helper to abstract Nanopb encoding and socket transmission
         // bool transmitMessage(const RemoteMessage &message);

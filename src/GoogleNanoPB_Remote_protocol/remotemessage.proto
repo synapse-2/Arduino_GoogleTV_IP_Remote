@@ -4,6 +4,9 @@
 syntax = "proto3";
 package Remote;
 
+import "nanopb.proto";
+option (nanopb_fileopt).max_size = 64; // File scope
+
 message RemoteAppLinkLaunchRequest {
   string app_link = 1;
 }

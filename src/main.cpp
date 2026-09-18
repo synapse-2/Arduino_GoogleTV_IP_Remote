@@ -117,7 +117,7 @@ void setup()
     esp_log_level_set("wifi", ESP_LOG_ERROR);
     esp_log_level_set("wifi_init", ESP_LOG_ERROR);
     esp_log_level_set("esp_netif_handlers", ESP_LOG_ERROR);
-    
+
     UtilityFunctions::setupWiFiAndConnect();
 
     // enable NTP server
@@ -144,39 +144,41 @@ void loop()
   {
     UtilityFunctions::debugLog(" Starting WIFI Connext ");
 
-    for (;;) // infinite loop
+#if defined(CONFIG_LWIP_IPV4) || defined(CONFIG_LWIP_IPV6)
+    // put wifi dependent code here for the loop
+    // Execute the TV search
+    std::vector<GoogleIPRemote::DiscoveredTv> foundTvs = GoogleIPRemote::GoogleTvRemote::scanForTvs();
+    // Print the clean summary block
+    UtilityFunctions::debugLog("\n===== DISCOVERED GOOGLE TV DEVICES =====");
+    for (const auto &tv : foundTvs)
+    {
+      Serial.printf("Device host Name: %s\n", tv.hostName.c_str());
+      Serial.printf("IP Address:  %s\n", tv.ip.c_str());
+      Serial.printf("BT MAC Address: %s\n", tv.btMac.c_str());
+      Serial.printf("Device friendly Name: %s\n", tv.friendlyName.c_str());
+      Serial.printf("Device model: %s\n", tv.model.c_str());
+      Serial.printf("Device IP mac: %s\n", tv.ipMac.c_str());
+      Serial.println("----------------------------------------");
+    }
+
+    if (foundTvs.size() >= 1)
     {
 
-      /// do work  handle
-      UtilityFunctions::ledBlinkBlue();
+      // connet to the first tv
 
-      /// do work
-      UtilityFunctions::delay(500);
-      // other updates such as BLE, arduinoIot, web server etc are to be put here
+      remote->connectToTV(foundTvs[0], progressCallback);
 
-#if defined(CONFIG_LWIP_IPV4) || defined(CONFIG_LWIP_IPV6)
-      // put wifi dependent code here for the loop
-      // Execute the TV search
-      std::vector<GoogleIPRemote::DiscoveredTv> foundTvs = GoogleIPRemote::GoogleTvRemote::scanForTvs();
-      // Print the clean summary block
-      UtilityFunctions::debugLog("\n===== DISCOVERED GOOGLE TV DEVICES =====");
-      for (const auto &tv : foundTvs)
-      {
-        Serial.printf("Device host Name: %s\n", tv.hostName.c_str());
-        Serial.printf("IP Address:  %s\n", tv.ip.c_str());
-        Serial.printf("BT MAC Address: %s\n", tv.btMac.c_str());
-        Serial.printf("Device friendly Name: %s\n", tv.friendlyName.c_str());
-        Serial.printf("Device model: %s\n", tv.model.c_str());
-        Serial.printf("Device IP mac: %s\n", tv.ipMac.c_str());
-        Serial.println("----------------------------------------");
-      }
-
-      if (foundTvs.size() >= 1)
+      for (;;) // infinite loop
       {
 
-        // connet to the first tv
+        /// do work  handle
+        UtilityFunctions::ledBlinkBlue();
 
-        remote->connectToTV(foundTvs[0], progressCallback);
+        remote->loopRemoteConnection();
+
+        /// do work
+        UtilityFunctions::delay(500);
+        // other updates such as BLE, arduinoIot, web server etc are to be put here
       }
 
 #endif
