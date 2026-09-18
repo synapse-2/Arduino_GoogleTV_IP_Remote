@@ -8,6 +8,7 @@
 #include <sys/param.h>
 #include "remotemessage.pb.h"
 #include "pairingmessage.pb.h"
+#include "esp_http_client.h"
 
 #if defined(WOLFSSL_USER_SETTINGS)
 #include <wolfssl/wolfcrypt/settings.h>
@@ -27,6 +28,11 @@
 
 #ifndef GIPR_GOOGLEIP_TVPORT_PAIRING
 #define GIPR_GOOGLEIP_TVPORT_PAIRING 6467
+#endif
+
+
+#ifndef GIPR_TCP_HANDSHAKE_TIMEOUT_MiliSec
+#define GIPR_TCP_HANDSHAKE_TIMEOUT_MiliSec 3000
 #endif
 
 #ifndef GIPR_ANDRIOD_TV_RMOETE_SERVICE
@@ -94,7 +100,7 @@
 #endif
 
 #ifndef GIPR_WOLFSSL_ERROR_TXT_BUFF
-#define GIPR_WOLFSSL_ERROR_TXT_BUFF 80 // note this will be on the heap stack
+#define GIPR_WOLFSSL_ERROR_TXT_BUFF 512 // note this will be on the heap stack
 #endif
 
 #ifndef GIPR_DELAY_TO_YEILD_MiliSec
@@ -128,6 +134,16 @@ namespace GoogleIPRemote
         String ipMac;
     };
 
+    typedef enum _RemoteMode
+    {
+        STARTUP = 1,
+        CONNECTED_TO_TV = 2,
+        CONNECTED_TO_PAIRING = 3,
+        INIT_WOL = 4,
+        DISCONNECTED = 5
+
+    } RemoteMode;
+
     // progress call back with prog percentage, if the call back returns false then the process is canceled.
     typedef bool (*progressCallback)(String work, int progPercent);
 
@@ -140,7 +156,7 @@ namespace GoogleIPRemote
         GoogleTvRemote();
         ~GoogleTvRemote();
 
-        bool connectToTV(DiscoveredTv tv, progressCallback callBack = NULL);
+        void connectToTV(DiscoveredTv tv, progressCallback callBack = NULL);
         void loopRemoteConnection();
         bool isConnected();
         bool isPaired();
@@ -152,9 +168,8 @@ namespace GoogleIPRemote
         static std::vector<DiscoveredTv> scanForTvs();
         static bool haveSelfCertificate();
         static bool makeNewSelfCertificate(progressCallback callBack = NULL);
-     
 
-        static String getWolfsslTxtError(int error);
+        static String getWolfsslTxtError(WOLFSSL * ssl, int error,  bool &isError );
 
         // Connection lifecycle
         // bool connect(const char *ipAddress, const char *clientCert, const char *clientKey);
@@ -171,21 +186,29 @@ namespace GoogleIPRemote
         static void forceArpResolution(const String &ipStr);
         static FRESULT ffat_write_buffer(const TCHAR *path, const void *buffer, UINT bytes_to_write, String beginMessage, String endMessage);
         bool createSSLCtx(progressCallback callBack);
-        bool makeSSLConnectBase(DiscoveredTv tv, progressCallback callBack, bool paring_complete);
-        bool makeSSLConnectRemote(DiscoveredTv tv, progressCallback callBack);
-        bool makeSSLConnectPairing(DiscoveredTv tv, progressCallback callBack);
+        bool makeSSLConnectBase(bool paring_complete);
+        bool connectTCPHandshake(uint16_t port, int32_t timeout_ms);
+
+        bool makeSSLConnectRemote();
+        bool makeSSLConnectPairing();
+
+        static bool wakeUpTV(String ip);
+        static esp_err_t http_WOL_event_handler(esp_http_client_event_t *evt);
 
         static int SSLSendBytes(WOLFSSL *ssl, char *msg, int sz, void *ctx);
         static int SSLReceiveBytes(WOLFSSL *ssl, char *reply, int sz, void *ctx);
+        static bool waitForSocket(int socket_fd, int condition, int32_t timeout_ms);
 
         static Remote_RemoteMessage *unpack_remote_message(const uint8_t *buffer, size_t buffer_length);
         static Pairing_PairingMessage *unpack_paring_message(const uint8_t *buffer, size_t buffer_length);
 
-        static Pairing_PairingRequest* createPairingRequest();
-        static uint8_t * pack_message(Pairing_PairingRequest msg);
+        static Pairing_PairingMessage *createPairingRequest();
+        static std::vector<uint8_t> pack_message(Pairing_PairingMessage *msg);
+        static void encodeMessegToSend(std::vector<uint8_t> &dataBuffer);
 
-        static Pairing_PairingMessage* createParingOptionMsg();
+        static Pairing_PairingMessage *createParingOptionMsg();
         static void printPacket(uint8_t *packet, size_t len);
+        static void printParingMessage(Pairing_PairingMessage* msg);
 
         unsigned long _lastPingTime;
         const unsigned long _pingInterval = 5000; // Keep-alive interval
@@ -194,7 +217,9 @@ namespace GoogleIPRemote
         WOLFSSL *ssl = NULL;
         int sockFD = -1;
         DiscoveredTv tvInit;
-        progressCallback callBackInit; 
+        progressCallback callBackInit;
+        RemoteMode API_state =  DISCONNECTED;
+        int connectRetries = 0;
 
         std::vector<uint8_t> readDataCunks;
 

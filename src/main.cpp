@@ -36,7 +36,7 @@ GoogleIPRemote::GoogleTvRemote *remote = new GoogleIPRemote::GoogleTvRemote();
 bool progressCallback(String work, int progPercent)
 {
 
-  UtilityFunctions::debugLogf("%s progress %i \n", work.c_str(), progPercent);
+  // UtilityFunctions::debugLogf("%s progress %i \n", work.c_str(), progPercent);
   return true;
 }
 
@@ -58,11 +58,11 @@ void MyRSATask(void *pvParameters)
 void setup()
 {
 
-  Serial.begin(115200);
+  Serial0.begin(115200);
   // Wait for the serial console to be ready. This is a blocking spin-wait
   // that exits once `Serial` becomes available (host opens serial terminal).
   // Exit condition: `Serial` evaluates true.
-  while (!Serial)
+  while (!Serial0)
     ; // wait for serial attach
 
   UtilityFunctions::debugLog("Initializing google tv ip remote...");
@@ -113,10 +113,11 @@ void setup()
     // it will be anonymous AP (wm.autoConnect()) then goes into a blocking loop
     // awaiting configuration and will return success result
 
-    // esp_log_level_set("*",ESP_LOG_ERROR);
-    esp_log_level_set("wifi", ESP_LOG_ERROR);
-    esp_log_level_set("wifi_init", ESP_LOG_ERROR);
-    esp_log_level_set("esp_netif_handlers", ESP_LOG_ERROR);
+    esp_log_level_set("*", ESP_LOG_ERROR);
+    // esp_log_level_set("wifi", ESP_LOG_ERROR);
+    // esp_log_level_set("wifi_init", ESP_LOG_ERROR);
+    // esp_log_level_set("esp_netif_handlers", ESP_LOG_ERROR);
+    esp_log_level_set("wolfssl", ESP_LOG_DEBUG);
 
     UtilityFunctions::setupWiFiAndConnect();
 
@@ -163,15 +164,16 @@ void loop()
 
     if (foundTvs.size() >= 1)
     {
-
       // connet to the first tv
 
-      remote->connectToTV(foundTvs[0], progressCallback);
+       remote->connectToTV(foundTvs[0], progressCallback);
+
 
       for (;;) // infinite loop
       {
 
         /// do work  handle
+        UtilityFunctions::debugLog("begin loop");
         UtilityFunctions::ledBlinkBlue();
 
         remote->loopRemoteConnection();

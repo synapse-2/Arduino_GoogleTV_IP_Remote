@@ -105,9 +105,14 @@
 #define WC_RSA_BLINDING
 /* Cache Resistant features are  on by default, but has performance
 * penalty on embedded systems. May not be needed here. Disabled: */
+/* USE_FAST_MATH is default */
+#define USE_FAST_MATH
+
 #define WC_NO_CACHE_RESISTANT
 #define WC_RSA_NONBLOCK
 #define WC_RSA_NONBLOCK_TIME
+
+#define WOLFSSL_ALT_NAMES
 
 
 //end of -- ADDED for to get the wolfssl to compile ---- such a pain for it to work in dual framework env
@@ -590,8 +595,7 @@
 /* hash limit for test.c */
 #define HASH_SIZE_LIMIT
 
-/* USE_FAST_MATH is default */
-#define USE_FAST_MATH
+
 
 /*****      Use SP_MATH      *****/
 /* #undef  USE_FAST_MATH         */
