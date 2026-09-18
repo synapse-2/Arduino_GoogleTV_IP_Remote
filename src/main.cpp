@@ -58,11 +58,11 @@ void MyRSATask(void *pvParameters)
 void setup()
 {
 
-  Serial.begin(115200);
+  Serial0.begin(115200);
   // Wait for the serial console to be ready. This is a blocking spin-wait
   // that exits once `Serial` becomes available (host opens serial terminal).
   // Exit condition: `Serial` evaluates true.
-  while (!Serial)
+  while (!Serial0)
     ; // wait for serial attach
 
   UtilityFunctions::debugLog("Initializing google tv ip remote...");

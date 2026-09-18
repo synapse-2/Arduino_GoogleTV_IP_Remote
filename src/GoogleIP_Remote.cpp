@@ -339,6 +339,7 @@ namespace GoogleIPRemote
                 Pairing_PairingMessage *message = unpack_paring_message(readDataCunks.data() + 1, readDataCunks.size() - 1);
                 if (message != NULL)
                 {
+                    printParingMessage(message);
                     // paring protocol
                     if (message->has_pairing_request_ack)
                     {
@@ -592,6 +593,9 @@ namespace GoogleIPRemote
     {
 
         // Note android paring port will NOT repond till a SSL conncet is done on the TV remote port and rejected first
+        // thre is a connncet limit for security also on the pairing port
+        // so while debugging you will have to go to the android tv remote service app in system apps and delete the program data to reset
+        // else the conncet to piaring will just hang
         UtilityFunctions::debugLog("SSL Pairing conect - BEGIN");
         bool ret = makeSSLConnectBase(false);
         UtilityFunctions::debugLog("SSL Pairing conect - END");
@@ -644,7 +648,10 @@ namespace GoogleIPRemote
         wolfSSL_set_fd(ssl, sockFD);
         // Explicitly register the standard BSD I/O system callbacks
 
+        // if (paring_complete == false)
+        // {
         //     wolfSSL_Debugging_ON();
+        // }
 
         // Complete Non-Blocking SSL/TLS Protocol Handshake Loop
         int ssl_err = 0;
@@ -838,8 +845,7 @@ namespace GoogleIPRemote
         // Add mandatory Chromecast security headers
         esp_http_client_set_header(client, "Content-Type", "application/x-www-form-urlencoded");
         esp_http_client_set_header(client, "Origin", "chrome-extension://boadgeojelhgndaghljhdicfkmllpafd");
-        
-        
+
         // Send a blank payload by explicitly setting NULL fields
         esp_http_client_set_post_field(client, NULL, 0);
 
@@ -1199,6 +1205,17 @@ namespace GoogleIPRemote
             str = str + hex_buf;
         }
         UtilityFunctions::debugLog(str);
+    }
+
+    void GoogleTvRemote::printParingMessage(Pairing_PairingMessage *msg)
+    {
+        if (msg == NULL)
+        {
+            UtilityFunctions::debugLog("NULL paring messge -- end.");
+            return;
+        }
+
+        UtilityFunctions::debugLogf("Msg protocol version: %i, msg status %i, has has_pairing_request: %i, has_pairing_request_ack: %i, has_pairing_option: %i, has_pairing_configuration: %i, has_pairing_configuration_ack: %i, has_pairing_secret: %i, has_pairing_secret_ack: %i \n", msg->protocol_version, msg->status, msg->has_pairing_request, msg->has_pairing_request_ack, msg->has_pairing_option, msg->has_pairing_configuration, msg->has_pairing_configuration_ack, msg->has_pairing_secret, msg->has_pairing_secret_ack);
     }
 
     bool GoogleTvRemote::haveSelfCertificate()

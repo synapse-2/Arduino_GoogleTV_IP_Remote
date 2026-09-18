@@ -208,6 +208,7 @@ namespace GoogleIPRemote
 
         static Pairing_PairingMessage *createParingOptionMsg();
         static void printPacket(uint8_t *packet, size_t len);
+        static void printParingMessage(Pairing_PairingMessage* msg);
 
         unsigned long _lastPingTime;
         const unsigned long _pingInterval = 5000; // Keep-alive interval
