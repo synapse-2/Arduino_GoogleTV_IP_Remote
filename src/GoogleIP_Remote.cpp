@@ -474,6 +474,119 @@ namespace GoogleIPRemote
         }
     }
 
+    void GoogleTvRemote::loopRemoteConnection()
+    {
+        if (!isConnected())
+        {
+            return;
+        }
+
+        uint8_t buffer[256];
+        int len = wolfSSL_read(ssl, &buffer, sizeof(buffer));
+        if (len <= 0)
+        {
+            if (isPaired())
+            {
+                UtilityFunctions::debugLog("ERROR in read from TV remote and we were paired we are disconnecting");
+                disconnect();
+                return;
+            }
+            else
+            {
+                // ok we need to be in paring mode we are not paired and  this is the initial connecction
+                disconnect();
+                is_paired = false;
+                makeSSLConnectPairing(tvInit, callBackInit);
+
+                // send pairing request
+                Pairing_PairingRequest *req = createPairingRequest();
+                uint8_t *buffer = pack_message(*req);
+                if (wolfSSL_send(ssl, buffer, sizeof(buffer), 0) < sizeof(buffer))
+                {
+                    UtilityFunctions::debugLog("ERROR failed to send pairing request - disconnecting");
+                    disconnect();
+                }
+                free(buffer);
+                return;
+            }
+        }
+        readDataCunks.insert(readDataCunks.end(), buffer, buffer + len);
+
+        if (readDataCunks.size() > 0 && readDataCunks[0] == readDataCunks.size() - 1)
+        {
+            printPacket(readDataCunks.data(), readDataCunks.size());
+            if (!is_paired)
+            {
+
+                Pairing_PairingMessage *message = unpack_paring_message(readDataCunks.data(), readDataCunks.size());
+                if (message != NULL)
+                {
+                    // paring protocol
+                    if (message->which_payload == Pairing_PairingMessage_pairing_request_ack_tag)
+                    {
+                        UtilityFunctions::debugLog("[DEBUG]: Pairing request ack received packet:");
+                        printPacket(readDataCunks.data(), readDataCunks.size());
+
+                        pb_release(Pairing_PairingRequest_fields, &message);
+                        Pairing_PairingMessage *buffer = createParingOptionMsg();
+                        wolfSSL_send(ssl, buffer, sizeof(buffer),0);
+                        free(buffer);
+                    }
+                    else if (message->pairing_option)
+                    {
+                        UtilityFunctions::debugLog("[DEBUG]: Pairing option received packet:");
+                        printPacket(chunks.data(), chunks.size());
+                        // uint8_t *buffer = pairingMessageManager.createPairingConfiguration();
+                        // ssl_send((char *)buffer, buffer[0] + 1);
+                        // free(buffer);
+                    }
+                    else if (message->pairing_configuration_ack)
+                    {
+                        UtilityFunctions::debugLog("[DEBUG]: Pairing configuration ack received packet\n");
+                        printPacket(chunks.data(), chunks.size());
+                    }
+                    else if (message->pairing_secret_ack)
+                    {
+                        UtilityFunctions::debugLog("[DEBUG]: Pairing secret ack received packet:");
+                        printPacket(chunks.data(), chunks.size());
+                        isSecure = false;
+                        UtilityFunctions::debugLog("[DEBUG]: Paired!\n");
+                    }
+                    else
+                    {
+                        UtilityFunctions::debugLog("[DEBUG]: Unkown type packet receivepacket:");
+                        printPacket(chunks.data(), chunks.size());
+                    }
+                }
+            }
+            else
+            {
+                Remote_RemoteMessage *message = unpack_remote_message(readDataCunks.data(), readDataCunks.size());
+            }
+        }
+    }
+
+    void GoogleTvRemote::disconnect()
+    {
+        if (ssl != NULL)
+        {
+            wolfSSL_free(ssl);
+            ssl = NULL;
+        }
+
+        if (sockFD != -1)
+        {
+            close(sockFD);
+            sockFD = -1;
+        }
+
+        if (ctx != NULL)
+        {
+            wolfSSL_CTX_free(ctx);
+            ctx = NULL;
+        }
+    }
+
     bool GoogleTvRemote::createSSLCtx(progressCallback callBack)
     {
 
